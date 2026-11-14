@@ -49,7 +49,7 @@ h2, h3, h4 { margin: 8px 0; } h3 small { color: var(--dim); }
 .sgrid .sp .ic { margin: 0 auto; } .sgrid .snm { font-size: 10px; line-height: 1.1; color: #cfdcff; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; } .sgrid .unseen .snm { color: #8090b8; }
 .ups { display: flex; gap: 4px; flex-wrap: wrap; margin: 4px 0; } .ups button { flex: 1; min-width: 86px; line-height: 1.15; } .ups .pips { letter-spacing: 1px; color: #ffd84a; } .ups small { opacity: .85; }
 .xprow { display: flex; align-items: center; gap: 8px; } .xprow .xp { width: 140px; }
-.xp { height: 6px; background: #0006; border-radius: 3px; margin: 4px 0; width: 200px; max-width: 60vw; } .xp i { display: block; height: 100%; background: #5cf; border-radius: 3px; }
+.xp { height: 6px; background: #0006; border-radius: 3px; margin: 4px 0; width: 200px; max-width: 100%; } .xp i { display: block; height: 100%; background: #5cf; border-radius: 3px; }
 .stats { font-size: 13px; color: var(--dim); }
 .move { background: #0003; border: 1px solid #fff2; border-radius: 6px; padding: 6px; margin: 4px 0; display: flex; align-items: center; flex-wrap: wrap; gap: 4px; }
 .move .md { width: 100%; font-size: 12px; color: var(--dim); } .move.new { border-color: #7cf; }
@@ -163,8 +163,8 @@ button.big { font-size: 24px; padding: 12px 38px; animation: pulse 2s ease-in-ou
 .mhead > div:not(.mic) { flex: 1; min-width: 0; }
 .mhead { padding: 8px; border-radius: 10px; margin: -4px -4px 6px; }
 .aic { filter: drop-shadow(0 3px 2px #0008); }
-.sbars { display: grid; grid-template-columns: 1fr 1fr; gap: 3px 14px; margin: 6px 0; width: 100%; max-width: 420px; }
-.sb { display: grid; grid-template-columns: 52px 30px minmax(60px, 1fr); align-items: center; font-size: 12px; gap: 4px; }
+.sbars { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 3px 10px; margin: 6px 0; width: 100%; max-width: 420px; }   /* shrinks to fit narrow phones */
+.sb { display: grid; grid-template-columns: 44px 26px minmax(0, 1fr); white-space: nowrap; align-items: center; font-size: 12px; gap: 4px; }
 .sb span { color: var(--dim); } .sb b { text-align: right; } .sb i { height: 6px; background: #0007; border-radius: 3px; overflow: hidden; } .sb u { display: block; height: 100%; background: linear-gradient(90deg, #4fc3ff, #9be2ff); text-decoration: none; }
 .sb.up span, .sb.up b { color: #ff8a8a; } .sb.dn span, .sb.dn b { color: #8ab4ff; } .sb.dead { opacity: .55; }
 .wprog { position: absolute; left: 10px; right: 10px; bottom: 2px; height: 3px; background: #0008; border-radius: 2px; overflow: hidden; }   /* under the one-row bar */ .wprog i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #6fe08a, #ffd84a); transition: width .3s; }
