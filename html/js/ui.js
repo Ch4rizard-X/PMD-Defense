@@ -4,6 +4,8 @@ const $ = s => document.querySelector(s);
 const el = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; };
 const STARTERS = [1, 4, 7, 152, 155, 158, 252, 255, 258, 387, 390, 393, 495, 498, 501, 650, 653, 656, 722, 725, 728, 810, 813, 816, 906, 909, 912, 25, 133];
 let UI = { screen: '', sel: null, portrait: false, hub: 'routes', route: null, team: [] };
+/* Android app: it draws behind the camera notch and passes the notch height (device pixels) as #cut=N, so the top bar can stay clear of it */
+{ const m = /cut=(\d+)/.exec(location.hash); if (m) document.documentElement.style.setProperty('--cut', (+m[1] / (devicePixelRatio || 1)) + 'px'); }
 const isPortrait = () => innerHeight > innerWidth;
 const screenAspect = () => Math.max(innerWidth, innerHeight) / Math.max(1, Math.min(innerWidth, innerHeight));
 function typeTag(t) { return `<span class="ty" style="background:${TCOL[t]}">${TYPES[t]}</span>`; }
@@ -487,7 +489,9 @@ function beginBattle() {
   const team = UI.team.map(u => G.box.find(e => e.u === u)).filter(Boolean);
   UI.portrait = isPortrait();
   startBattle(UI.route.set, UI.route.tier, UI.route.seed, team, UI.portrait, screenAspect());
-  show('battle'); buildHud(); layout();
+  show('battle'); buildHud();
+  const a = playAspect(); if (Math.abs(a - B.aspect) > 0.01) { B.aspect = a; B.M = genMap(B.set, B.portrait, B.seed, null, a, B.tier); }   // make the map in the shape of the space under the top bar
+  layout();
 }
 function buildHud() {
   const h = $('#hud'); h.innerHTML = '';
@@ -620,6 +624,9 @@ function towerInfo() {
   const sell = el('button', 'sm alt', `Recall ($${Math.floor(t.paid * 0.7)})`); sell.onclick = () => { sellTower(t); towerInfo(); refreshHud(); };
   modes.append(more, sell); p.appendChild(modes); p.classList.add('on');
 }
+/* the top bar covers the map, so the map lives in the space under it: hudInset = the bar's bottom edge in canvas pixels */
+function hudInset() { const h = document.querySelector('#hud .hb'), st = $('#stage'); if (!h || !st) return 0; return Math.max(0, h.getBoundingClientRect().bottom - st.getBoundingClientRect().top + 4); }
+function playAspect() { const w = innerWidth, h = Math.max(1, innerHeight - hudInset()); return Math.max(w, h) / Math.max(1, Math.min(w, h)); }
 function layout() {
   if (!B) return;
   const port = isPortrait(), bat = $('#battle'); bat.classList.toggle('port', port);
@@ -630,11 +637,13 @@ function layout() {
   }
   const area = $('#stage'), r = area.getBoundingClientRect(), dpr = Math.min(2, devicePixelRatio || 1);
   CV.width = Math.floor(r.width * dpr); CV.height = Math.floor(r.height * dpr); CV.style.width = r.width + 'px'; CV.style.height = r.height + 'px';
-  const mw = B.M.W * TZ, mh = B.M.H * TZ, s0 = Math.max(CV.width / mw, CV.height / mh);   // fill the screen (the map is made in the screen's shape, so little is cut)
-  const z = UI.zoom || 1, s = s0 * z, cx = UI.zc ? UI.zc[0] : mw / 2, cy = UI.zc ? UI.zc[1] : mh / 2;   // pinch zoom: zc is the map point at the screen's centre
-  VIEW = { s, s0, ox: CV.width / 2 - cx * s, oy: CV.height / 2 - cy * s, dpr };
-  VIEW.ox = clamp(VIEW.ox, CV.width - mw * s, 0); VIEW.oy = clamp(VIEW.oy, CV.height - mh * s, 0);
-  UI.zc = [(CV.width / 2 - VIEW.ox) / s, (CV.height / 2 - VIEW.oy) / s];
+  const top = Math.min(CV.height * 0.4, hudInset() * dpr), ah = CV.height - top, my = top + ah / 2;   // play area: under the top bar
+  const mw = B.M.W * TZ, mh = B.M.H * TZ, s0 = Math.min(CV.width / mw, ah / mh);   // the whole map fits the play area (it is made in that shape, so the edges left over are thin)
+  const z = UI.zoom || 1, s = s0 * z, cx = UI.zc ? UI.zc[0] : mw / 2, cy = UI.zc ? UI.zc[1] : mh / 2;   // pinch zoom: zc is the map point at the play area's centre
+  VIEW = { s, s0, ox: CV.width / 2 - cx * s, oy: my - cy * s, dpr, top };
+  VIEW.ox = mw * s <= CV.width ? (CV.width - mw * s) / 2 : clamp(VIEW.ox, CV.width - mw * s, 0);
+  VIEW.oy = mh * s <= ah ? top + (ah - mh * s) / 2 : clamp(VIEW.oy, CV.height - mh * s, top);
+  UI.zc = [(CV.width / 2 - VIEW.ox) / s, (my - VIEW.oy) / s];
 }
 function resetZoom() { UI.zoom = 1; UI.zc = null; if (B) layout(); }
 function toMap(ev) { const r = CV.getBoundingClientRect(); return [((ev.clientX - r.left) * VIEW.dpr - VIEW.ox) / VIEW.s, ((ev.clientY - r.top) * VIEW.dpr - VIEW.oy) / VIEW.s]; }
@@ -661,7 +670,7 @@ function setupInput() {
       const mx = ((a.x + b.x) / 2 - r.left) * VIEW.dpr, my = ((a.y + b.y) / 2 - r.top) * VIEW.dpr;
       const fx = (mx - VIEW.ox) / VIEW.s, fy = (my - VIEW.oy) / VIEW.s;   // keep the map point under the fingers in place
       UI.zoom = clamp(pinch.z * d / Math.max(1, pinch.d), 1, 3);
-      const s = VIEW.s0 * UI.zoom; UI.zc = [fx + (CV.width / 2 - mx) / s, fy + (CV.height / 2 - my) / s];
+      const s = VIEW.s0 * UI.zoom; const pcy = (VIEW.top || 0) + (CV.height - (VIEW.top || 0)) / 2; UI.zc = [fx + (CV.width / 2 - mx) / s, fy + (pcy - my) / s];
       UI.zc[0] -= dx / 2 * VIEW.dpr / s; UI.zc[1] -= dy / 2 * VIEW.dpr / s; layout(); panned = true; return;
     }
     if (B.placing) { setGhost(ev); return; }
@@ -727,7 +736,7 @@ function frame(ts) {
   if (UI.screen === 'battle' && B) {
     tick(dt);
     if (B.asks && B.asks.length && !$('#modal').classList.contains('on')) askJoin();
-    CX.setTransform(1, 0, 0, 1, 0, 0); CX.fillStyle = '#000'; CX.fillRect(0, 0, CV.width, CV.height);
+    CX.setTransform(1, 0, 0, 1, 0, 0); CX.fillStyle = '#0a1430'; CX.fillRect(0, 0, CV.width, CV.height);
     CX.setTransform(VIEW.s, 0, 0, VIEW.s, VIEW.ox, VIEW.oy); CX.imageSmoothingEnabled = false;
     drawBattle(CX);
     CX.setTransform(1, 0, 0, 1, 0, 0);   // soft vignette so the floating HUD sits on darker edges

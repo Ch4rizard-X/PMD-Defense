@@ -101,26 +101,30 @@ def uleb(n):
 def build_dex():
     MAIN = 'L' + PKG.replace('.', '/') + '/Main;'
     ACT, WV, WS, WIN, VIEW, BUN, CTX, STR = 'Landroid/app/Activity;', 'Landroid/webkit/WebView;', 'Landroid/webkit/WebSettings;', 'Landroid/view/Window;', 'Landroid/view/View;', 'Landroid/os/Bundle;', 'Landroid/content/Context;', 'Ljava/lang/String;'
-    URL = 'file:///android_asset/index.html'
-    # method refs: (class, name, return, (params))
+    LP, VER, INS, CUT, LIS = 'Landroid/view/WindowManager$LayoutParams;', 'Landroid/os/Build$VERSION;', 'Landroid/view/WindowInsets;', 'Landroid/view/DisplayCutout;', 'Landroid/view/View$OnApplyWindowInsetsListener;'
+    URL = 'file:///android_asset/index.html#cut='
     M = {
         'act_init': (ACT, '<init>', 'V', ()), 'main_init': (MAIN, '<init>', 'V', ()),
         'act_onCreate': (ACT, 'onCreate', 'V', (BUN,)), 'main_onCreate': (MAIN, 'onCreate', 'V', (BUN,)),
         'act_onPause': (ACT, 'onPause', 'V', ()), 'main_onPause': (MAIN, 'onPause', 'V', ()),
         'act_onResume': (ACT, 'onResume', 'V', ()), 'main_onResume': (MAIN, 'onResume', 'V', ()),
+        'main_onInsets': (MAIN, 'onApplyWindowInsets', INS, (VIEW, INS)),
         'getWindow': (ACT, 'getWindow', WIN, ()), 'requestWindowFeature': (ACT, 'requestWindowFeature', 'Z', ('I',)),
         'setContentView': (ACT, 'setContentView', 'V', (VIEW,)),
         'addFlags': (WIN, 'addFlags', 'V', ('I',)), 'getDecorView': (WIN, 'getDecorView', VIEW, ()),
-        'setSUV': (VIEW, 'setSystemUiVisibility', 'V', ('I',)),
+        'getAttributes': (WIN, 'getAttributes', LP, ()), 'setAttributes': (WIN, 'setAttributes', 'V', (LP,)),
+        'setSUV': (VIEW, 'setSystemUiVisibility', 'V', ('I',)), 'setInsL': (VIEW, 'setOnApplyWindowInsetsListener', 'V', (LIS,)),
         'wv_init': (WV, '<init>', 'V', (CTX,)), 'getSettings': (WV, 'getSettings', WS, ()), 'loadUrl': (WV, 'loadUrl', 'V', (STR,)),
         'wv_onPause': (WV, 'onPause', 'V', ()), 'wv_onResume': (WV, 'onResume', 'V', ()),
         'setJS': (WS, 'setJavaScriptEnabled', 'V', ('Z',)), 'setDom': (WS, 'setDomStorageEnabled', 'V', ('Z',)),
         'setFile': (WS, 'setAllowFileAccess', 'V', ('Z',)), 'setMedia': (WS, 'setMediaPlaybackRequiresUserGesture', 'V', ('Z',)),
+        'getCut': (INS, 'getDisplayCutout', CUT, ()), 'safeTop': (CUT, 'getSafeInsetTop', 'I', ()),
+        'valueOf': (STR, 'valueOf', STR, ('I',)), 'concat': (STR, 'concat', STR, (STR,)),
     }
-    F = {'w': (MAIN, 'w', WV)}
+    F = {'w': (MAIN, 'w', WV), 'ld': (MAIN, 'ld', 'Z'), 'sdk': (VER, 'SDK_INT', 'I'), 'cutMode': (LP, 'layoutInDisplayCutoutMode', 'I')}
     shorty = lambda r, ps: ''.join('L' if t.startswith('L') or t.startswith('[') else t for t in (r,) + ps)
     strings = {URL}
-    types = {MAIN, ACT, WV, WS, WIN, VIEW, BUN, CTX, STR, 'V', 'Z', 'I'}
+    types = {MAIN, ACT, WV, WS, WIN, VIEW, BUN, CTX, STR, LP, VER, INS, CUT, LIS, 'V', 'Z', 'I'}
     protos = set()
     for c, n, r, ps in M.values(): strings |= {n}; protos.add((r, ps))
     for c, n, t in F.values(): strings.add(n)
@@ -129,18 +133,38 @@ def build_dex():
     S = sorted(strings, key=lambda s: s.encode('utf-16-be')); si = {s: i for i, s in enumerate(S)}
     T = sorted(types, key=lambda t: si[t]); ti = {t: i for i, t in enumerate(T)}
     P = sorted(protos, key=lambda p: (ti[p[0]], [ti[x] for x in p[1]])); pi = {p: i for i, p in enumerate(P)}
-    FL = sorted(F.values(), key=lambda f: (ti[f[0]], si[f[1]], ti[f[2]])); fi = {k: FL.index(v) for k, v in F.items()}
+    FL = sorted(set(F.values()), key=lambda f: (ti[f[0]], si[f[1]], ti[f[2]])); fi = {k: FL.index(v) for k, v in F.items()}
     ML = sorted(set(M.values()), key=lambda m: (ti[m[0]], si[m[1]], pi[(m[2], m[3])])); mi = {k: ML.index(v) for k, v in M.items()}
 
+    # tiny assembler: ints are code units; ('L', name) is a label; ('b21', op, a, lbl) / ('b22', op, a, b, lbl) are branches
     def inv(op, m, regs):
         r = list(regs) + [0] * (5 - len(regs))
         return [(len(regs) << 12) | (r[4] << 8) | op, mi[m], (r[3] << 12) | (r[2] << 8) | (r[1] << 4) | r[0]]
-    V, D, S_ = 0x6e, 0x70, 0x6f
-    mro = lambda a: [(a << 8) | 0x0c]
+    V, D, S_, ST = 0x6e, 0x70, 0x6f, 0x71
+    mro = lambda a: [(a << 8) | 0x0c]; mr = lambda a: [(a << 8) | 0x0a]
     c4 = lambda a, v: [((v & 0xf) << 12) | (a << 8) | 0x12]
     c16 = lambda a, v: [(a << 8) | 0x13, v & 0xffff]
+    ifield = lambda op, a, b, f: [(b << 12) | (a << 8) | op, fi[f]]     # iget/iput: a = value, b = object
+    sget = lambda a, f: [(a << 8) | 0x60, fi[f]]
+    cstr = lambda a, s: [(a << 8) | 0x1a, si[s]]
+    def asm(items):
+        pos, n = {}, 0
+        for it in items:
+            if isinstance(it, tuple):
+                if it[0] == 'L': pos[it[1]] = n
+                else: n += 2
+            else: n += 1
+        out, n = [], 0
+        for it in items:
+            if isinstance(it, tuple):
+                if it[0] == 'L': continue
+                off = (pos[it[-1]] - n) & 0xffff
+                if it[0] == 'b21': out += [(it[2] << 8) | it[1], off]
+                else: out += [(it[3] << 12) | (it[2] << 8) | it[1], off]
+                n += 2
+            else: out.append(it); n += 1
+        return out
     ret = [0x000e]
-    # registers: locals v0..v3, then the ins (this = v4, then params)
     code = {}
     code['main_init'] = (1, 1, 1, inv(D, 'act_init', [0]) + ret)
     p0, p1 = 4, 5
@@ -148,21 +172,34 @@ def build_dex():
     oc += inv(S_, 'act_onCreate', [p0, p1])
     oc += c4(1, 1) + inv(V, 'requestWindowFeature', [p0, 1])                      # no title bar
     oc += inv(V, 'getWindow', [p0]) + mro(0) + c16(1, 0x480) + inv(V, 'addFlags', [0, 1])   # full screen + keep the screen on
+    oc += sget(1, 'sdk') + c16(2, 28) + [('b22', 0x34, 1, 2, 'nocut')]            # Android 9+: draw behind the camera notch
+    oc += inv(V, 'getAttributes', [0]) + mro(2) + c4(3, 1) + ifield(0x59, 3, 2, 'cutMode') + inv(V, 'setAttributes', [0, 2])
+    oc += [('L', 'nocut')]
     oc += [(0 << 8) | 0x22, ti[WV]] + inv(D, 'wv_init', [0, p0])                 # new WebView(this)
-    oc += [(p0 << 12) | (0 << 8) | 0x5b, fi['w']]                               # this.w = it
+    oc += ifield(0x5b, 0, p0, 'w')                                              # this.w = it
     oc += inv(V, 'getSettings', [0]) + mro(1) + c4(2, 1)
     oc += inv(V, 'setJS', [1, 2]) + inv(V, 'setDom', [1, 2]) + inv(V, 'setFile', [1, 2])
     oc += c4(2, 0) + inv(V, 'setMedia', [1, 2])                                 # sound without a tap first
-    oc += inv(V, 'setContentView', [p0, 0])
-    oc += [(1 << 8) | 0x1a, si[URL]] + inv(V, 'loadUrl', [0, 1]) + ret
-    code['main_onCreate'] = (6, 2, 2, oc)
-    op = inv(S_, 'act_onPause', [1]) + [(1 << 12) | (0 << 8) | 0x54, fi['w']] + inv(V, 'wv_onPause', [0]) + ret
+    oc += inv(V, 'setInsL', [0, p0])                                            # the page loads once the notch size is known
+    oc += inv(V, 'setContentView', [p0, 0]) + ret
+    code['main_onCreate'] = (6, 2, 2, asm(oc))
+    op = inv(S_, 'act_onPause', [1]) + ifield(0x54, 0, 1, 'w') + inv(V, 'wv_onPause', [0]) + ret
     code['main_onPause'] = (2, 1, 1, op)
-    orr = inv(S_, 'act_onResume', [2]) + [(2 << 12) | (0 << 8) | 0x54, fi['w']] + inv(V, 'wv_onResume', [0])
+    orr = inv(S_, 'act_onResume', [2]) + ifield(0x54, 0, 2, 'w') + inv(V, 'wv_onResume', [0])
     orr += inv(V, 'getWindow', [2]) + mro(0) + inv(V, 'getDecorView', [0]) + mro(0) + c16(1, 0x1706) + inv(V, 'setSUV', [0, 1]) + ret   # hide the system bars (sticky immersive)
     code['main_onResume'] = (3, 1, 2, orr)
+    # onApplyWindowInsets(view, insets): first time only, load the game with #cut=<notch height in device pixels>
+    q0, q2 = 4, 6
+    oi = ifield(0x55, 0, q0, 'ld') + [('b21', 0x39, 0, 'done')]
+    oi += c4(0, 1) + ifield(0x5c, 0, q0, 'ld') + c4(1, 0)
+    oi += sget(0, 'sdk') + c16(2, 28) + [('b22', 0x34, 0, 2, 'go')]
+    oi += inv(V, 'getCut', [q2]) + mro(0) + [('b21', 0x38, 0, 'go')] + inv(V, 'safeTop', [0]) + mr(1)
+    oi += [('L', 'go')]
+    oi += inv(ST, 'valueOf', [1]) + mro(1) + cstr(0, URL) + inv(V, 'concat', [0, 1]) + mro(0)
+    oi += ifield(0x54, 1, q0, 'w') + inv(V, 'loadUrl', [1, 0])
+    oi += [('L', 'done'), (q2 << 8) | 0x11]                                      # return-object insets
+    code['main_onInsets'] = (7, 3, 2, asm(oi))
 
-    # layout
     n_s, n_t, n_p, n_f, n_m, n_c = len(S), len(T), len(P), len(FL), len(ML), 1
     off = 0x70
     o_s = off; off += 4 * n_s
@@ -175,34 +212,32 @@ def build_dex():
     data = bytearray(); base = data_off
     def align4():
         while (base + len(data)) % 4: data.append(0)
-    # type lists
     align4(); tl_off = {}; tl_start = base + len(data); n_tl = 0
-    for p in P:
-        if p[1] and p[1] not in tl_off:
-            align4(); tl_off[p[1]] = base + len(data); n_tl += 1
-            data += struct.pack('<I', len(p[1])) + b''.join(struct.pack('<H', ti[x]) for x in p[1])
-    # code items
+    lists = [p[1] for p in P if p[1]] + [(LIS,)]
+    for l in lists:
+        if l not in tl_off:
+            align4(); tl_off[l] = base + len(data); n_tl += 1
+            data += struct.pack('<I', len(l)) + b''.join(struct.pack('<H', ti[x]) for x in l)
     align4(); code_start = base + len(data); code_off = {}
-    order = ['main_init', 'main_onCreate', 'main_onPause', 'main_onResume']
+    order = ['main_init', 'main_onCreate', 'main_onPause', 'main_onResume', 'main_onInsets']
     for k in order:
         align4(); code_off[k] = base + len(data); regs, ins, outs, insns = code[k]
         data += struct.pack('<HHHHII', regs, ins, outs, 0, 0, len(insns)) + b''.join(struct.pack('<H', u) for u in insns)
-    # string data
     sd_start = base + len(data); sd_off = []
-    for s in S:
-        sd_off.append(base + len(data)); data += uleb(len(s)) + s.encode('utf-8') + b'\0'
-    # class data
+    for s_ in S:
+        sd_off.append(base + len(data)); data += uleb(len(s_)) + s_.encode('utf-8') + b'\0'
     cd_off = base + len(data)
     direct = [('main_init', 0x10001)]
-    virtual = sorted([('main_onCreate', 0x4), ('main_onPause', 0x4), ('main_onResume', 0x4)], key=lambda x: mi[x[0]])
-    cd = uleb(0) + uleb(1) + uleb(len(direct)) + uleb(len(virtual))
-    cd += uleb(fi['w']) + uleb(0x2)   # private WebView w
+    virtual = sorted([('main_onCreate', 0x4), ('main_onPause', 0x4), ('main_onResume', 0x4), ('main_onInsets', 0x1)], key=lambda x: mi[x[0]])
+    inst = sorted([fi['w'], fi['ld']])
+    cd = uleb(0) + uleb(len(inst)) + uleb(len(direct)) + uleb(len(virtual))
+    prev = 0
+    for f in inst: cd += uleb(f - prev) + uleb(0x2); prev = f       # private fields
     prev = 0
     for k, acc in direct: cd += uleb(mi[k] - prev) + uleb(acc) + uleb(code_off[k]); prev = mi[k]
     prev = 0
     for k, acc in virtual: cd += uleb(mi[k] - prev) + uleb(acc) + uleb(code_off[k]); prev = mi[k]
     data += cd
-    # map list
     align4(); map_off = base + len(data)
     entries = [(0x0000, 1, 0), (0x0001, n_s, o_s), (0x0002, n_t, o_t), (0x0003, n_p, o_p), (0x0004, n_f, o_f), (0x0005, n_m, o_m), (0x0006, n_c, o_c)]
     if n_tl: entries.append((0x1001, n_tl, tl_start))
@@ -213,10 +248,10 @@ def build_dex():
     ids = bytearray()
     ids += b''.join(struct.pack('<I', o) for o in sd_off)
     ids += b''.join(struct.pack('<I', si[t]) for t in T)
-    ids += b''.join(struct.pack('<III', si[shorty(*p)], ti[p[0]], tl_off.get(p[1], 0) if p[1] else 0) for p in P)
+    ids += b''.join(struct.pack('<III', si[shorty(*p)], ti[p[0]], tl_off[p[1]] if p[1] else 0) for p in P)
     ids += b''.join(struct.pack('<HHI', ti[c], ti[t], si[n]) for c, n, t in FL)
     ids += b''.join(struct.pack('<HHI', ti[c], pi[(r, ps)], si[n]) for c, n, r, ps in ML)
-    ids += struct.pack('<IIIIIIII', ti[MAIN], 0x1, ti[ACT], 0, 0xFFFFFFFF, 0, cd_off, 0)
+    ids += struct.pack('<IIIIIIII', ti[MAIN], 0x1, ti[ACT], tl_off[(LIS,)], 0xFFFFFFFF, 0, cd_off, 0)
     assert 0x70 + len(ids) == data_off
     size = data_off + len(data)
     hdr = bytearray(b'dex\n035\0' + b'\0' * 24)
