@@ -394,6 +394,7 @@ function ko(t, e) {
 function floater(o, txt, kind) { B.fl.push({ x: o.x + (rnd() * 8 - 4), y: o.y - 24 * SPR, txt, kind, t: 0 }); }
 /* user effects that flow in from one side of the sheet: turned so that side faces the target (value = which way that side points; PI/2 = down) */
 const FX_FROM = { 'efob023/anim00': Math.PI / 2, 'efob023/anim08': Math.PI / 2 };   // Absorb, Mega Drain, Giga Drain, Leech Life...: orbs drawn rising from below into the user
+for (const k of Object.keys(FX_FROM)) FX_FROM['eos' + k.slice(4)] = FX_FROM[k];   // Explorers of Sky has the same effect files (same numbers), drawn the same way round
 function addFx(ref, x, y, dir, ang) { const a = DB.fx.anims[ref]; if (a) B.fx.push({ a, x, y, row: a.r > 1 ? dir : 0, t: 0, rot: FX_FROM[ref] != null && ang != null ? ang - FX_FROM[ref] : 0 }); }
 function dirRow(dx, dy) { const deg = Math.atan2(dy, dx) * 180 / Math.PI; return ((Math.round((90 - deg) / 45) % 8) + 8) % 8; }
 
@@ -531,12 +532,14 @@ function drawMon(g, id, name, t, row, x, y, alpha, loop, sc) {
 const PROJ_FRONT = { 'efob013/anim48': Math.PI / 2, 'efob136/anim16': Math.PI / 2, 'efob136/anim24': Math.PI / 2, 'efob062/anim00': Math.PI / 2,
   'efob052/anim00': Math.PI / 2, 'efob118/anim00': Math.PI / 2, 'efob013/anim32': Math.PI / 2, 'efob013/anim08': 0,
   'efob069/anim00': Math.PI / 2, 'efob127/anim00': Math.PI / 2, 'efob013/anim16': -Math.PI / 2 };   // Megahorn and Icicle Spear lead with their point; Mud Shot's stack is aligned with its flight
+for (const k of Object.keys(PROJ_FRONT)) PROJ_FRONT['eos' + k.slice(4)] = PROJ_FRONT[k];
 function drawFxAnim(g, a, t, row, x, y, rot) {
   const im = img('img/fx/' + a.f + '.png'); if (!im.complete || !im.naturalWidth) return;
   let ft = Math.floor(t * 60), f = 0; const tot = a.d.reduce((s, v) => s + v, 0); ft %= tot;
   while (f < a.n - 1 && ft >= a.d[f]) { ft -= a.d[f]; f++; }
-  if (rot) { g.save(); g.translate(Math.round(x), Math.round(y)); g.rotate(rot); g.drawImage(im, f * a.fw, 0, a.fw, a.fh, -a.fw * FXS / 2, -a.fh * FXS / 2, a.fw * FXS, a.fh * FXS); g.restore(); return; }
-  g.drawImage(im, f * a.fw, (a.r > 1 ? row : 0) * a.fh, a.fw, a.fh, Math.round(x - a.fw * FXS / 2), Math.round(y - a.fh * FXS / 2), a.fw * FXS, a.fh * FXS);
+  const ax = (a.ox != null ? a.ox : a.fw / 2) * FXS, ay = (a.oy != null ? a.oy : a.fh / 2) * FXS;   // Explorers of Sky sheets carry their anchor point; Red's are centred
+  if (rot) { g.save(); g.translate(Math.round(x), Math.round(y)); g.rotate(rot); g.drawImage(im, f * a.fw, 0, a.fw, a.fh, -ax, -ay, a.fw * FXS, a.fh * FXS); g.restore(); return; }
+  g.drawImage(im, f * a.fw, (a.r > 1 ? row : 0) * a.fh, a.fw, a.fh, Math.round(x - ax), Math.round(y - ay), a.fw * FXS, a.fh * FXS);
 }
 function drawDigits(g, txt, x, y, kind, sc) {
   sc = sc || 1;

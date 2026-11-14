@@ -69,11 +69,12 @@ h2, h3, h4 { margin: 8px 0; } h3 small { color: var(--dim); }
 #battle.on { display: block; position: fixed; inset: 0; overflow: hidden; background: #000; }
 #stage { position: absolute; inset: 0; } #cv { display: block; touch-action: none; }
 #hud { position: absolute; top: 0; left: 0; right: 0; z-index: 5; pointer-events: none; padding: max(6px, max(env(safe-area-inset-top), var(--cut, 0px))) 6px 0; }
-.hb { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; pointer-events: auto; background: rgba(8,19,48,.62); border: 1px solid rgba(143,184,255,.45); border-radius: 10px; padding: 3px 6px; backdrop-filter: blur(3px); }
+.hb { padding-bottom: 8px !important; position: relative; display: inline-flex; align-items: center; gap: 6px; flex-wrap: nowrap; white-space: nowrap; pointer-events: auto; background: rgba(8,19,48,.62); border: 1px solid rgba(143,184,255,.45); border-radius: 10px; padding: 3px 6px; backdrop-filter: blur(3px); }
 .hb span { min-width: 0; padding: 0 3px; text-shadow: 1px 1px #000; } .hb button { margin: 1px; padding: 3px 8px; background-color: rgba(43,74,155,.75); }
 .hb #bgo { background: rgba(58,138,58,.85); }
 #teambar { position: absolute; z-index: 5; left: 50%; transform: translateX(-50%); bottom: max(6px, env(safe-area-inset-bottom)); max-width: calc(100% - 12px); display: flex; gap: 4px; overflow-x: auto; padding: 4px; background: rgba(8,19,48,.5); border: 1px solid rgba(143,184,255,.35); border-radius: 10px; }
 #teambar .tc { flex: 0 0 64px; }
+#teambar { touch-action: pan-x; overscroll-behavior: contain; scrollbar-width: none; } #teambar::-webkit-scrollbar { display: none; }   /* swipe sideways when the team is wider than the screen */
 #tinfo { position: absolute; z-index: 6; left: 50%; transform: translateX(-50%); bottom: calc(max(6px, env(safe-area-inset-bottom)) + 84px); width: min(620px, calc(100% - 12px)); display: none; padding: 6px 8px; background: rgba(26,53,128,.88); border: 2px solid var(--edge); border-radius: 10px; font-size: 14px; }
 #tinfo.on { display: block; } .mvs { margin: 3px 0; } .modes { display: flex; flex-wrap: wrap; }
 .tc { background: rgba(26,53,128,.8); border: 2px solid var(--edge); border-radius: 6px; display: flex; flex-direction: column; align-items: center; padding: 2px; cursor: pointer; font-size: 11px; text-align: center; }
@@ -166,7 +167,7 @@ button.big { font-size: 24px; padding: 12px 38px; animation: pulse 2s ease-in-ou
 .sb { display: grid; grid-template-columns: 52px 30px minmax(60px, 1fr); align-items: center; font-size: 12px; gap: 4px; }
 .sb span { color: var(--dim); } .sb b { text-align: right; } .sb i { height: 6px; background: #0007; border-radius: 3px; overflow: hidden; } .sb u { display: block; height: 100%; background: linear-gradient(90deg, #4fc3ff, #9be2ff); text-decoration: none; }
 .sb.up span, .sb.up b { color: #ff8a8a; } .sb.dn span, .sb.dn b { color: #8ab4ff; } .sb.dead { opacity: .55; }
-.wprog { flex-basis: 100%; height: 3px; background: #0008; border-radius: 2px; overflow: hidden; margin-top: 2px; } .wprog i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #6fe08a, #ffd84a); transition: width .3s; }
+.wprog { position: absolute; left: 10px; right: 10px; bottom: 2px; height: 3px; background: #0008; border-radius: 2px; overflow: hidden; }   /* under the one-row bar */ .wprog i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #6fe08a, #ffd84a); transition: width .3s; }
 #bossbar { display: none; position: relative; margin: 6px auto 0; width: min(420px, 80%);   /* flows right under the HUD bar, however many rows it wraps to on a phone */ pointer-events: none; text-align: center; zoom: var(--uiz); }
 #bossbar.on { display: block; animation: fadeUp .3s ease-out; }
 #bossbar .bn { font-size: 15px; text-shadow: 2px 2px #000, 0 0 8px #000; } #bossbar .bn small { color: #ffe39a; } #bossbar .lg { color: #e0b0ff; font-size: 12px; }

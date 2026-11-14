@@ -625,7 +625,14 @@ function towerInfo() {
 }
 /* the top bar covers the map, so the map lives in the space under it: hudInset = the bar's bottom edge in canvas pixels */
 function hudInset() { const h = document.querySelector('#hud .hb'), st = $('#stage'); if (!h || !st) return 0; return Math.max(0, h.getBoundingClientRect().bottom - st.getBoundingClientRect().top + 4); }
-function playAspect() { const w = innerWidth, h = Math.max(1, innerHeight - hudInset()); return Math.max(w, h) / Math.max(1, Math.min(w, h)); }
+function teamInset() { const t = $('#teambar'); return t && t.children.length ? t.getBoundingClientRect().height + 10 : 0; }
+function playAspect() { fitHud(); const w = innerWidth, h = Math.max(1, innerHeight - hudInset() - teamInset()); return Math.max(w, h) / Math.max(1, Math.min(w, h)); }
+/* the top bar is one row: if it is wider than the screen it shrinks to fit */
+function fitHud() {
+  const h = document.querySelector('#hud .hb'); if (!h) return; h.style.zoom = '';
+  const z = parseFloat(getComputedStyle(h).zoom) || 1, w = h.getBoundingClientRect().width, room = innerWidth - 12;
+  if (w > room) h.style.zoom = (z * room / w).toFixed(3);
+}
 function layout() {
   if (!B) return;
   const port = isPortrait(), bat = $('#battle'); bat.classList.toggle('port', port);
@@ -636,12 +643,18 @@ function layout() {
   }
   const area = $('#stage'), r = area.getBoundingClientRect(), dpr = Math.min(2, devicePixelRatio || 1);
   CV.width = Math.floor(r.width * dpr); CV.height = Math.floor(r.height * dpr); CV.style.width = r.width + 'px'; CV.style.height = r.height + 'px';
-  const top = Math.min(CV.height * 0.4, hudInset() * dpr), ah = CV.height - top, my = top + ah / 2;   // play area: under the top bar
+  fitHud();
+  const top = Math.min(CV.height * 0.4, hudInset() * dpr), bot = Math.min(CV.height * 0.3, teamInset() * dpr), ah = CV.height - top - bot, my = top + ah / 2;   // play area: under the top bar, above the team row
   const mw = B.M.W * TZ, mh = B.M.H * TZ, s0 = Math.min(CV.width / mw, ah / mh);   // the whole map fits the play area (it is made in that shape, so the edges left over are thin)
   const z = UI.zoom || 1, s = s0 * z, cx = UI.zc ? UI.zc[0] : mw / 2, cy = UI.zc ? UI.zc[1] : mh / 2;   // pinch zoom: zc is the map point at the play area's centre
   VIEW = { s, s0, ox: CV.width / 2 - cx * s, oy: my - cy * s, dpr, top };
   VIEW.ox = mw * s <= CV.width ? (CV.width - mw * s) / 2 : clamp(VIEW.ox, CV.width - mw * s, 0);
-  VIEW.oy = mh * s <= ah ? top + (ah - mh * s) / 2 : clamp(VIEW.oy, CV.height - mh * s, top);
+  VIEW.oy = mh * s <= ah ? top : clamp(VIEW.oy, CV.height - bot - mh * s, top);   // the map sits right under the top bar
+  { // the team row sits right under the map (where the map ends at normal zoom), and the move info right above the row
+    const tb = $('#teambar'), y = (top + Math.min(mh * s0, ah)) / dpr + 4;
+    if (tb) { tb.style.top = y + 'px'; tb.style.bottom = 'auto'; }
+    const ti = $('#tinfo'); if (ti && tb) ti.style.bottom = (innerHeight - y + 6) + 'px';
+  }
   UI.zc = [(CV.width / 2 - VIEW.ox) / s, (my - VIEW.oy) / s];
 }
 function resetZoom() { UI.zoom = 1; UI.zc = null; if (B) layout(); }
