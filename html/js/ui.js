@@ -464,22 +464,21 @@ function hubBag(body) {
 function showTeam() {
   show('team'); const t = $('#team'); artBg(t, 2);
   UI.team = (G.team || []).filter(u => G.box.some(e => e.u === u)).slice(0, 10);
-  const render = () => {
-    t.innerHTML = `<div class="bar"><b>${DB.ts[UI.route.set].name} - Tier ${UI.route.tier}</b><span>Team ${UI.team.length}/10</span></div>`;
-    const g = el('div', 'grid');
-    for (const e of G.box.slice().sort((a, b) => b.lv - a.lv)) {
+  // built once: a tap only flips that card and the counter (rebuilding everything made the list reload on every pick)
+  t.innerHTML = `<div class="bar"><b>${DB.ts[UI.route.set].name} - Tier ${UI.route.tier}</b><span class="tcount"></span></div>`;
+  const g = el('div', 'grid'), bar = el('div', 'bar bottom');
+  const back = el('button', 'alt', '◀ Back'); back.onclick = () => showHub('routes');
+  const go = el('button', '', 'Start ▶'); go.onclick = () => { G.team = UI.team.slice(); save(); beginBattle(); };
+  const sync = () => { t.querySelector('.tcount').textContent = `Team ${UI.team.length}/10`; go.disabled = !UI.team.length; };
+  for (const e of G.box.slice().sort((a, b) => b.lv - a.lv)) {
+    const c = monCard(e, () => {
       const on = UI.team.includes(e.u);
-      const c = monCard(e, () => { if (on) UI.team = UI.team.filter(u => u !== e.u); else if (UI.team.length < 10) UI.team.push(e.u); sfx('tap'); render(); });
-      if (on) c.classList.add('picked'); g.appendChild(c);
-    }
-    t.appendChild(g);
-    const bar = el('div', 'bar bottom');
-    const back = el('button', 'alt', '◀ Back'); back.onclick = () => showHub('routes');
-    const go = el('button', '', 'Start ▶'); go.disabled = !UI.team.length;
-    go.onclick = () => { G.team = UI.team.slice(); save(); beginBattle(); };
-    bar.append(back, go); t.appendChild(bar);
-  };
-  render();
+      if (on) UI.team = UI.team.filter(u => u !== e.u); else if (UI.team.length < 10) UI.team.push(e.u); else return;
+      c.classList.toggle('picked', !on); sfx('tap'); sync();
+    });
+    if (UI.team.includes(e.u)) c.classList.add('picked'); g.appendChild(c);
+  }
+  bar.append(back, go); t.append(g, bar); sync();
 }
 
 /* ---------- battle screen ---------- */
