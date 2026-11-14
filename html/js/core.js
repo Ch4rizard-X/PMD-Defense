@@ -183,7 +183,17 @@ for (const [k, t] of Object.entries(TYPE_ITEM)) HELD_TD[k] = `${TYPES[t]} moves 
 const HELD_RARE = new Set(['choice-band', 'choice-specs', 'choice-scarf', 'life-orb', 'expert-belt']);
 function heldKey(e) { return e && e.it && DB.dex.held[e.it] ? DB.dex.held[e.it].k : ''; }
 function heldPrice(k) { return HELD_RARE.has(k) ? 0 : k === 'lucky-egg' || k === 'amulet-coin' ? 8000 : 3000; }
-function placeCost(e) { return Math.round((40 + SP[e.id].bst * 0.25 + e.lv * 2.5) * (1 + mod('placeCost'))); }
+/* ---------- type quirks (your team only; a dual type gets both) ---------- */
+const TQ = {
+  0: ['Thrifty', 'Costs 10% less to place'], 1: ['Boss hitter', '+20% damage to bosses'], 2: ['Far sight', '+15% range'],
+  3: ['Toxic', 'Hits stack poison (up to 5)'], 4: ['Tremor', 'Hits may stun briefly'], 5: ['Crush', 'First hit on each enemy deals +30%'],
+  6: ['Swarm', '+5% attack speed for each other Bug placed'], 7: ['Phase', 'Attacks go through Protect shields'], 8: ['Pierce', 'Ignores Rock / Steel armour'],
+  9: ['Scorch', 'Hits may burn'], 10: ['Soak', 'Hits slow enemies a little'], 11: ['Vines', 'Enemies in its range move 10% slower'],
+  12: ['Chain', 'Hits jump to one more enemy for 30% damage'], 13: ['Foresight', 'Reveals hidden Ghosts from 50% farther'], 14: ['Chill', 'Hits slow enemies by 15%'],
+  15: ['Fury', 'Higher critical-hit chance'], 16: ['Finisher', 'Finishes off enemies below 15% HP (not bosses)'], 17: ['Aura', 'Teammates close by deal +5% damage'],
+};
+const quirks = id => SP[id].t.map(x => TQ[x]).filter(Boolean);
+function placeCost(e) { return Math.round((40 + SP[e.id].bst * 0.25 + e.lv * 2.5) * (1 + mod('placeCost')) * (SP[e.id].t.includes(0) ? 0.9 : 1)); }
 /* ---------- Rescue Points tree: owned nodes add up into small permanent bonuses ---------- */
 let MODS = null;
 function mods() {

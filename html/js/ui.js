@@ -213,11 +213,12 @@ function spawnList(i, tier) {
   if (SI.legs.length) sec('Legendary bosses', SI.legs);
   return wrap;
 }
+const qkLine = id => quirks(id).map(([n, d], i) => `<div class="qk"><span class="ty" style="background:${TCOL[SP[id].t[i]]}">${n}</span> ${d}</div>`).join('');
 function monCard(e, onclick, extra) {
   const c = el('div', 'card mon monc'); c.style.setProperty('--i', (UI.ci = (UI.ci || 0) + 1) % 40); c.appendChild(icon(e.id));
   c.appendChild(el('div', 'lvb', 'Lv ' + e.lv)); if (seesWhy(e)) c.appendChild(el('div', 'eyeb', '👁')).title = 'Sees hidden Pokémon: ' + seesWhy(e);
   const ty = SP[e.id].t; c.appendChild(el('div', 'tstripe', '')).style.background = ty.length > 1 ? `linear-gradient(90deg, ${TCOL[ty[0]]} 50%, ${TCOL[ty[1]]} 50%)` : TCOL[ty[0]];
-  c.appendChild(el('div', 'nm', SP[e.id].n)); c.appendChild(el('div', 'lv', (evoOptions(e).some(o => o.ok) ? '<span class="evo">EVOLVE</span> ' : '') + (e.pend.length ? '<span class="new">NEW MOVE</span>' : '')));
+  c.appendChild(el('div', 'nm', SP[e.id].n)); c.appendChild(el('div', 'qkn', quirks(e.id).map(q => q[0]).join(' / '))); c.appendChild(el('div', 'lv', (evoOptions(e).some(o => o.ok) ? '<span class="evo">EVOLVE</span> ' : '') + (e.pend.length ? '<span class="new">NEW MOVE</span>' : '')));
   if (extra) c.appendChild(extra);
   if (onclick) c.onclick = onclick; return c;
 }
@@ -237,7 +238,7 @@ function monPanel(e, after) {
       <div class="xp"><i style="width:${e.lv >= MAXLV ? 100 : Math.floor((e.xp - cur) / (nx - cur) * 100)}%"></i></div>
       <div class="sbars">${st.map((v, i) => { const N = DB.dex.nat[natOf(e) - 1], c = N.up === N.dn ? '' : i === N.up ? 'up' : i === N.dn ? 'dn' : ''; const use = i === 1 || i === 3 || i === 5;
         return `<div class="sb ${c}${use ? '' : ' dead'}"><span>${STATN[i]}${c === 'up' ? ' ▲' : c === 'dn' ? ' ▼' : ''}</span><b>${v}</b><i><u style="width:${Math.min(100, v / (i ? 331 * e.lv / 100 + 5 : 331 * e.lv / 100 + e.lv + 10) * 100)}%"></u></i></div>`; }).join('')}</div>
-      <div class="hint">Placing costs $${placeCost(e)} battle cash</div>`));
+      ${qkLine(e.id)}<div class="hint">Placing costs $${placeCost(e)} battle cash</div>`));
     box.appendChild(head);
     const A = DB.dex.abil[e.ab];
     if (A) box.appendChild(el('div', 'move', `<b>Ability: ${A.n}</b>${(s.ab.find(x => x[0] === e.ab) || [])[1] ? ' <small>(hidden ability)</small>' : ''}<div class="md">${A.d}</div><div class="md" style="color:${AB_TD[A.k] ? '#9f9' : '#aaa'}">${AB_TD[A.k] ? 'In Route Defense: ' + AB_TD[A.k] : 'No effect in Route Defense'}</div>`));
@@ -595,7 +596,7 @@ function refreshHud() {
 }
 function towerInfo() {
   const p = $('#tinfo'); const t = B && B.sel;
-  if (B && B.placing && !t) { p.innerHTML = `<b>${SP[B.placing.id].n}</b> - tap the map to place ($${placeCost(B.placing)}). ${SP[B.placing.id].t.includes(10) || SP[B.placing.id].t.includes(9) ? 'Can stand in ' + (SP[B.placing.id].t.includes(10) ? 'water' : 'lava') + '.' : ''}`; p.classList.add('on'); return; }
+  if (B && B.placing && !t) { p.innerHTML = `<b>${SP[B.placing.id].n}</b> - tap the map to place ($${placeCost(B.placing)}). ${quirks(B.placing.id).map(q => q[0] + ': ' + q[1]).join('. ')}. ${SP[B.placing.id].t.includes(10) || SP[B.placing.id].t.includes(9) ? 'Can stand in ' + (SP[B.placing.id].t.includes(10) ? 'water' : 'lava') + '.' : ''}`; p.classList.add('on'); return; }
   if (!t && B && B.selE && B.selE.hp > 0) {
     const x = B.selE, s = SP[x.id], A = DB.dex.abil[x.ab];
     const tags = [x.air && 'Flying: cuts corners, Ground moves miss', x.hide && 'Hidden: needs a Psychic or Ghost type, Foresight, Odor Sleuth, Miracle Eye, Keen Eye or Frisk nearby', x.dig && 'Digs: underground only Earthquake / Magnitude / Fissure hit', x.armor && 'Armoured: moves under 60 power do half', x.boss && 'Boss'].filter(Boolean);
@@ -607,7 +608,7 @@ function towerInfo() {
   const A = DB.dex.abil[e.ab], H = DB.dex.held[e.it];
   const tg = [sees(t) && 'Sees hidden', A && AB_TD[A.k] && !AB_TD[A.k].startsWith('Wild') && A.n, H && H.n].filter(Boolean);
   const x0 = xpFor(s.gr, e.lv), x1 = e.lv < MAXLV ? xpFor(s.gr, e.lv + 1) : e.xp, xf = e.lv >= MAXLV ? 100 : clamp((e.xp - x0) / Math.max(1, x1 - x0), 0, 1) * 100;
-  p.innerHTML = `<b>${s.n}</b> Lv ${e.lv} - ${t.kills} KOs ${s.t.map(typeTag).join('')} <span class="hint">${tg.join(' - ')}</span><div class="xprow"><div class="xp"><i style="width:${xf}%"></i></div><span class="hint">${e.lv >= MAXLV ? 'Max level' : (x1 - e.xp).toLocaleString() + ' XP to Lv ' + (e.lv + 1)}</span></div><div class="mvs">${e.mv.map(m => `<span class="ty" style="background:${TCOL[mv(m).t]}" title="${moveDesc(m)}">${mv(m).n}</span>`).join('')}</div>`;
+  p.innerHTML = `<b>${s.n}</b> Lv ${e.lv} - ${t.kills} KOs ${s.t.map(typeTag).join('')} <span class="hint">${tg.join(' - ')}</span>${qkLine(e.id)}<div class="xprow"><div class="xp"><i style="width:${xf}%"></i></div><span class="hint">${e.lv >= MAXLV ? 'Max level' : (x1 - e.xp).toLocaleString() + ' XP to Lv ' + (e.lv + 1)}</span></div><div class="mvs">${e.mv.map(m => `<span class="ty" style="background:${TCOL[mv(m).t]}" title="${moveDesc(m)}">${mv(m).n}</span>`).join('')}</div>`;
   const modes = el('div', 'modes');
   for (const [k, n] of [['first', 'First'], ['last', 'Last'], ['strong', 'Strong'], ['close', 'Close']]) { const b = el('button', 'sm' + (t.mode === k ? '' : ' alt'), n); b.onclick = () => { t.mode = k; towerInfo(); }; modes.appendChild(b); }
   const more = el('button', 'sm alt', 'Moves / Evolve' + (evoOptions(e).some(o => o.ok) || e.pend.length ? ' ●' : ''));
@@ -750,7 +751,8 @@ function frame(ts) {
     if (B.asks && B.asks.length && !$('#modal').classList.contains('on')) askJoin();
     CX.setTransform(1, 0, 0, 1, 0, 0); CX.fillStyle = '#0a1430'; CX.fillRect(0, 0, CV.width, CV.height);
     CX.setTransform(VIEW.s, 0, 0, VIEW.s, VIEW.ox, VIEW.oy); CX.imageSmoothingEnabled = false;
-    drawBattle(CX);
+    CX.save(); CX.beginPath(); CX.rect(0, 0, B.M.W * TZ, B.M.H * TZ); CX.clip();   // nothing is drawn outside the map (walkers entering, flyers hovering above the edge)
+    drawBattle(CX); CX.restore();
     CX.setTransform(1, 0, 0, 1, 0, 0);   // soft vignette so the floating HUD sits on darker edges
     if (!UI.vg || UI.vg.w !== CV.width || UI.vg.h !== CV.height) { const v = CX.createRadialGradient(CV.width / 2, CV.height / 2, Math.min(CV.width, CV.height) * 0.45, CV.width / 2, CV.height / 2, Math.hypot(CV.width, CV.height) * 0.6); v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(0,0,10,.38)'); UI.vg = { g: v, w: CV.width, h: CV.height }; }
     CX.fillStyle = UI.vg.g; CX.fillRect(0, 0, CV.width, CV.height);

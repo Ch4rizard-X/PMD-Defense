@@ -145,6 +145,7 @@ function seesWhy(e) {   // why a Pokémon can see hidden Ghost types (null if it
 }
 function sees(t) { return !!seesWhy(t.e); }
 function maxRange(t) { return Math.max(40, ...t.e.mv.filter(moveUse).map(m => towerRange(t, m))); }
+const hasT = (t, x) => SP[t.e.id].t.includes(x);   // tower type check for the type quirks (TQ in core.js)
 function canHit(t, m, e) {
   const M = mv(m);
   if (e.under) return m === 89 || m === 222 || m === 90;
@@ -197,7 +198,7 @@ function upgradeCost(t, k) { return t.up[k] >= UPG.max ? 0 : Math.round(placeCos
 function buyUpgrade(t, k) { const c = upgradeCost(t, k); if (!c || B.cash < c) return false; B.cash -= c; t.paid += c; t.up[k]++; sfx('lvl'); return true; }
 const upK = (t, k) => 1 + UPG.step * ((t.up && t.up[k]) || 0);
 function sellTower(t) { B.cash += Math.floor(t.paid * 0.7); B.towers = B.towers.filter(x => x !== t); if (B.sel === t) B.sel = null; }
-function towerRange(t, m) { return RANGE[mv(m).c] * (1 + Math.min(0.25, t.e.lv / 400) + mod('range')) * upK(t, 0); }
+function towerRange(t, m) { return RANGE[mv(m).c] * (1 + Math.min(0.25, t.e.lv / 400) + mod('range')) * upK(t, 0) * (hasT(t, 2) ? 1.15 : 1); }   // Flying: Far sight
 function inRange(t, r) { return B.en.filter(e => e.hp > 0 && e.d > 0 && Math.hypot(e.x - t.x, e.y - t.y) <= r); }
 function chooseTarget(t, list) {
   if (!list.length) return null;
@@ -241,6 +242,7 @@ function fire(t, b, st) {
   let cd = 5.5 / Math.sqrt(Math.max(5, M.pp)) * (M.pr > 0 ? 0.8 : 1);
   cd /= 1 + st[5] * STAGE(t.buf[5]) / 150;
   cd /= upK(t, 1);   // Attack speed upgrades
+  if (hasT(t, 6)) cd /= 1 + 0.05 * B.towers.filter(o => o !== t && hasT(o, 6)).length;   // Bug: Swarm
   const ak = abKey(t.e.ab), hk = heldKey(t.e), wk = B.weather && B.weather.k, ty = SP[t.e.id].t;
   cd /= 1 + mod('atkSpeed') + Math.max(0, ...ty.map(x => mod('ts' + x)));
   const tile = B.M.t[Math.floor(t.y / TZ)][Math.floor(t.x / TZ)];
@@ -297,13 +299,15 @@ function applyMove(t, m, e, st) {
       let ty = SP[e.id].t; if (ak === 'scrappy' && (M.t === 0 || M.t === 1)) ty = ty.filter(x => x !== 7);
       const ef = eff(M.t, ty);
       if (ef === 0 || (ek === 'wonder-guard' && ef <= 1)) { floater(e, 'MISS', 1); return; }
-      const cs = clamp(M.cr + (ak === 'super-luck' ? 1 : 0) + (hk === 'scope-lens' || hk === 'razor-claw' ? 1 : 0), 0, 3);
+      const cs = clamp(M.cr + (hasT(t, 15) ? 1 : 0) + (ak === 'super-luck' ? 1 : 0) + (hk === 'scope-lens' || hk === 'razor-claw' ? 1 : 0), 0, 3);
       const crit = ek !== 'battle-armor' && ek !== 'shell-armor' && rnd() < [1 / 24, 1 / 8, 1 / 2, 1][cs] + mod('crit') ? (ak === 'sniper' ? 2.25 : 1.5) : 1;
       let pw = M.p || 60; if (ak === 'technician' && pw <= 60) pw *= 1.5;
       let mlt = (me.t.includes(M.t) ? (ak === 'adaptability' ? 2 : 1.5) + mods().stab || (ak === 'adaptability' ? 2 : 1.5) : 1) * ef * crit;
       mlt *= 1 + (mods().power || 0) + (mods()['tp' + M.t] || 0);
       mlt *= upK(t, 2);   // Power upgrades
-      if (e.boss) mlt *= 1 + (mods().bossDmg || 0);
+      if (e.boss) mlt *= 1 + (mods().bossDmg || 0) + (hasT(t, 1) ? 0.2 : 0);   // Fighting: Boss hitter
+      if (hasT(t, 5)) { const rk = e.rk || (e.rk = new Set()); if (!rk.has(t)) { rk.add(t); mlt *= 1.3; } }   // Rock: Crush
+      if (B.towers.some(o => o !== t && hasT(o, 17) && Math.hypot(o.x - t.x, o.y - t.y) <= 90)) mlt *= 1.05;   // Fairy: Aura
       const wp = 0.5 + (mods().weatherPower || 0);   // weather: Rain / Sun boost one type x1.5 and weaken the other x0.5
       if (wk === 'rain') mlt *= M.t === 10 ? 1 + wp : M.t === 9 ? 0.5 : 1;
       if (wk === 'sun') mlt *= M.t === 9 ? 1 + wp : M.t === 10 ? 0.5 : 1;
@@ -322,7 +326,7 @@ function applyMove(t, m, e, st) {
       if (ek === 'dry-skin' && M.t === 9) mlt *= 1.25;
       if ((ek === 'filter' || ek === 'solid-rock' || ek === 'prism-armor') && ef > 1) mlt *= 0.75;
       if ((ek === 'multiscale' || ek === 'shadow-shield') && e.hp >= e.max) mlt *= 0.5;
-      if (e.armor && (M.p || 60) < 60) mlt *= 0.5;
+      if (e.armor && (M.p || 60) < 60 && !hasT(t, 8)) mlt *= 0.5;   // Steel: Pierce
       dmg = 0;
       for (let h = 0; h < hits; h++) dmg += ((2 * L / 5 + 2) * pw * A / D / 50 + 2) * mlt * (0.85 + rnd() * 0.15);
       dmg = Math.max(1, Math.floor(dmg));
@@ -330,7 +334,7 @@ function applyMove(t, m, e, st) {
       if (e.sts === 'freeze' && M.t === 9) { e.sts = null; e.stop = 0; }
     }
     if (ek === 'sturdy' && !e.sturdy && e.hp >= e.max && dmg >= e.hp) { dmg = e.hp - 1; e.sturdy = 1; }
-    hurt(t, e, dmg);
+    hurt(t, e, dmg); quirkHit(t, e, dmg);
     if (e.hp > 0 && M.ai !== 'none' && AILMENTS.includes(M.ai) && chance(M.ac || 0)) inflict(e, M.ai, t);
     if (e.hp > 0 && (M.fl && chance(M.fl) || (!M.fl && (hk === 'kings-rock' || hk === 'razor-fang') && rnd() < 0.1))) e.stop = Math.max(e.stop, 0.35);
     if (e.hp > 0 && M.sc.length && M.tg !== 7 && chance(M.sch || 0)) debuff(e, M.sc, t);
@@ -358,9 +362,25 @@ function inflict(e, ai, t) {
   e.sts = ai; e.stt = D[ai] * k * (1 + mod('statusDur'));
   if (ai === 'sleep' || ai === 'freeze' || ai === 'trap') e.stop = Math.max(e.stop, e.stt);
 }
+/* on-hit type quirks */
+function quirkHit(t, e, dmg) {
+  if (hasT(t, 12) && !B.chain) {                                                            // Electric: Chain
+    const o = B.en.filter(x => x !== e && x.hp > 0 && x.d > 0 && !x.under && !(x.hide && !(x.rev > 0)) && Math.hypot(x.x - e.x, x.y - e.y) < 70)
+      .sort((a, b) => Math.hypot(a.x - e.x, a.y - e.y) - Math.hypot(b.x - e.x, b.y - e.y))[0];
+    if (o) { B.chain = 1; B.zap = (B.zap || []).concat([{ a: [e.x, e.y], b: [o.x, o.y], t: 0.18 }]); hurt(t, o, Math.max(1, Math.floor(dmg * 0.3))); B.chain = 0; }
+  }
+  if (e.hp <= 0) return;
+  if (hasT(t, 9) && rnd() < 0.15) inflict(e, 'burn', t);                                    // Fire: Scorch
+  if (hasT(t, 3)) { e.pst = Math.min(5, (e.pst || 0) + 1); e.ptt = 4; e.psrc = t; }          // Poison: Toxic
+  if (hasT(t, 10)) e.wsl = 1.5;                                                             // Water: Soak
+  if (hasT(t, 14)) e.chill = 2;                                                             // Ice: Chill
+  if (hasT(t, 4) && rnd() < 0.08) e.stop = Math.max(e.stop, e.boss ? 0.2 : 0.4);            // Ground: Tremor
+  if (hasT(t, 16) && !e.boss && e.hp > 0 && e.hp < e.max * 0.15) { floater(e, 'Finish', 4); hurt(t, e, e.hp); }   // Dark: Finisher
+}
 function hurt(t, e, dmg) {
-  if (e.prot && e.sh <= 0 && e.shcd <= 0 && e.hp - dmg > 0) { e.shm = e.sh = Math.ceil(e.max * 0.25); e.sht = 3; e.shcd = 9; floater(e, mv(e.prot).n, 4); }
-  if (e.sh > 0) { const a = Math.min(e.sh, dmg); e.sh -= a; dmg -= a; if (e.sh <= 0) e.sht = 0; if (dmg <= 0) { e.hurt = 0.1; return; } }
+  const phase = t && hasT(t, 7);   // Ghost: Phase - attacks go through Protect shields
+  if (!phase && e.prot && e.sh <= 0 && e.shcd <= 0 && e.hp - dmg > 0) { e.shm = e.sh = Math.ceil(e.max * 0.25); e.sht = 3; e.shcd = 9; floater(e, mv(e.prot).n, 4); }
+  if (!phase && e.sh > 0) { const a = Math.min(e.sh, dmg); e.sh -= a; dmg -= a; if (e.sh <= 0) e.sht = 0; if (dmg <= 0) { e.hurt = 0.1; return; } }
   e.hp -= dmg;
   if (e.heal && !e.healed && e.hp > 0 && e.hp < e.max * 0.4) { e.healed = 1; e.hp = Math.min(e.max, e.hp + Math.ceil(e.max * e.heal.hl)); floater(e, mv(e.heal.m).n, 4); } e.hurt = 0.25; floater(e, String(dmg), 0);
   if (e.hp <= 0) ko(t, e);
@@ -413,6 +433,8 @@ function tick(dt) {
     }
   }
   syncWeather();
+  const vines = B.towers.filter(t => hasT(t, 11)).map(t => [t.x, t.y, maxRange(t)]);   // Grass: Vines
+  if (B.zap) { for (const z of B.zap) z.t -= dt; B.zap = B.zap.filter(z => z.t > 0); }
   const chipK = B.weather && (B.weather.k === 'sand' || B.weather.k === 'hail') ? B.weather.k : null;
   for (const e of B.en) {
     e.at += dt;
@@ -422,7 +444,8 @@ function tick(dt) {
         : ty.includes(14) || ['ice-body', 'snow-cloak', 'overcoat', 'magic-guard'].includes(e.ak);
       if (!safe) { e.wdot = (e.wdot || 0) + e.max * 0.02 * (1 + mod('weatherChip')) * dt * (e.boss ? 0.4 : 1); if (e.wdot >= 1) { const d = Math.floor(e.wdot); e.wdot -= d; e.hp -= d; if (e.hp <= 0) { ko(null, e); continue; } } }
     }
-    e.hurt = Math.max(0, e.hurt - dt); e.imm -= dt;
+    e.hurt = Math.max(0, e.hurt - dt); e.imm -= dt; e.chill = (e.chill || 0) - dt; e.wsl = (e.wsl || 0) - dt;
+    if (e.pst > 0) { e.ptt -= dt; if (e.ptt <= 0) e.pst = 0; else if (e.ak !== 'magic-guard') { e.pd = (e.pd || 0) + e.max * 0.01 * e.pst * dt * (e.boss ? 0.4 : 1); if (e.pd >= 1) { const d = Math.floor(e.pd); e.pd -= d; e.hp -= d; if (e.hp <= 0) { ko(B.towers.includes(e.psrc) ? e.psrc : null, e); continue; } } } }
     if (e.sht > 0) { e.sht -= dt; if (e.sht <= 0) e.sh = 0; } e.shcd -= dt;
     if (e.regen) { e.rg = (e.rg || 0) + e.max * 0.01 * dt; if (e.rg >= 1) { const h = Math.floor(e.rg); e.rg -= h; e.hp = Math.min(e.max, e.hp + h); } }
     if (e.dashMv) { if (e.dash > 0) e.dash -= dt; else if (e.d > 0 && !e.stop && !e.sts && (e.dt2 -= dt) <= 0) { e.dash = 0.6; e.dt2 = 4 + rnd() * 2; } }
@@ -439,11 +462,12 @@ function tick(dt) {
       let v = e.spd * e.pace * (1 + 0.12 * Math.sin(B.time * e.sw * 1.7 + e.ph)) * STAGE(clamp(e.stg[6] + e.bst[6], -6, 6)) * (e.dash > 0 ? 3 : 1);
       if (e.ak === 'quick-feet' && e.sts) v *= 1.5;
       if (e.ak === 'speed-boost') { e.sbt += dt; v *= Math.min(2, 1 + e.sbt / 40); }
+      if (e.chill > 0) v *= 0.85; if (e.wsl > 0) v *= 0.9; if (vines.some(([x, y, r]) => Math.hypot(x - e.x, y - e.y) <= r)) v *= 0.9;   // Ice / Water / Grass quirks
       if (e.sts === 'paralysis') v *= 0.5; if (e.sts === 'confusion') v *= (Math.sin(B.time * 6) > 0 ? 0.6 : -0.3);
       e.d += v * dt;
     }
     if (e.dig) { e.digt -= dt; if (e.digt <= 0) { e.under = !e.under; e.digt = e.under ? 2.5 : 2.2; } }
-    if (e.hide) { e.rev -= dt; for (const t of B.towers) if (sees(t) && Math.hypot(t.x - e.x, t.y - e.y) <= maxRange(t)) { e.rev = 0.4; break; } }
+    if (e.hide) { e.rev -= dt; for (const t of B.towers) if (sees(t) && Math.hypot(t.x - e.x, t.y - e.y) <= maxRange(t) * (hasT(t, 13) ? 1.5 : 1)) { e.rev = 0.4; break; } }
     const rt = routeOf(e), [x, y, a] = pathAt(B.M, Math.max(0, e.d), rt);
     // drift across the path instead of marching on the centre line; ease the turn at corners
     const off = e.lane + Math.sin(B.time * e.sw + e.ph) * 5, nx = -Math.sin(a), ny = Math.cos(a);
@@ -588,6 +612,11 @@ function drawBattle(g) {
   } });
   ents.sort((a, b) => a.y - b.y); for (const e of ents) e.f();
   if (B.ghost && B.placing) { marker(g, true, B.placing.id, B.ghost.x, B.ghost.y, SPR); drawMon(g, B.placing.id, 'Idle', B.time, 0, B.ghost.x, B.ghost.y, B.ghost.ok ? 0.8 : 0.4); }
+  if (B.zap) for (const z of B.zap) {   // Electric: Chain - a short zigzag between the two enemies
+    const [ax, ay] = z.a, [bx, by] = z.b, n = 5; g.save(); g.strokeStyle = 'rgba(255,240,120,' + Math.min(1, z.t / 0.1) + ')'; g.lineWidth = 2; g.beginPath(); g.moveTo(ax, ay - 8 * ESPR);
+    for (let i = 1; i < n; i++) { const k = i / n; g.lineTo(ax + (bx - ax) * k + (rnd() - 0.5) * 10, ay + (by - ay) * k - 8 * ESPR + (rnd() - 0.5) * 10); }
+    g.lineTo(bx, by - 8 * ESPR); g.stroke(); g.restore();
+  }
   for (const p of B.proj) drawFxAnim(g, DB.fx.anims[p.fx], p.at, p.row || 0, p.x, p.y, PROJ_FRONT[p.fx] != null && p.ang != null ? p.ang - PROJ_FRONT[p.fx] : 0);
   for (const f of B.fx) drawFxAnim(g, f.a, f.t, f.row, f.x, f.y, f.rot);
   for (const f of B.fl) { const pop = 1 + Math.max(0, 0.12 - f.t) * 5, a = f.t > 0.65 ? 1 - (f.t - 0.65) / 0.25 : 1; g.globalAlpha = clamp(a, 0, 1); drawDigits(g, f.txt, f.x, f.y - f.t * 22, f.kind, 1.35 * pop); g.globalAlpha = 1; }
