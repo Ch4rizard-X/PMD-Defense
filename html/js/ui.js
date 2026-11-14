@@ -290,7 +290,8 @@ function monPanel(e, after) {
       const r = el('div', 'move new', `<b>New: ${mv(m).n}</b> <span class="ty" style="background:${TCOL[mv(m).t]}">${TYPES[mv(m).t]}</span><div class="md">${moveDesc(m)} - tap Replace on a move above, or</div>`);
       const sk = el('button', 'sm alt', "Don't learn"); sk.onclick = () => { e.pend.shift(); save(); render(); }; r.appendChild(sk); box.appendChild(r);
     }
-    const rem = learnedBy(e.id, e.lv).filter(m => !e.mv.includes(m) && moveUse(m));
+    const rem = learnedBy(e.id, e.lv).filter(m => !e.mv.includes(m) && (moveUse(m) || skills()[m]));
+    const skI = e.mv.indexOf(MID('Sketch')); if (skI >= 0 && UI.screen !== 'battle') { const sb = el('button', 'sm', 'Sketch a move'); sb.onclick = () => sketchPanel(e, skI, () => monPanel(e, after)); box.appendChild(sb); }
     if (rem.length) { const rb = el('button', 'sm alt', `Move Reminder (${rem.length})`); rb.onclick = () => remindPanel(e, () => monPanel(e, after)); box.appendChild(rb); }
     const ev = evoOptions(e);
     if (ev.length) {
@@ -327,7 +328,7 @@ function remindPanel(e, back) {     // relearn any move learned up to this level
   const box = panel('', back); let pickNew = null;
   const render = () => {
     box.innerHTML = `<h3>Move Reminder</h3><p class="hint">${pickNew == null ? 'Pick a move ' + SP[e.id].n + ' learned before.' : 'Pick a move to forget for ' + mv(pickNew).n + '.'}</p>`;
-    const list = pickNew == null ? learnedBy(e.id, e.lv).filter(m => !e.mv.includes(m) && moveUse(m)).sort((a, b) => moveValue(b, e.id) - moveValue(a, e.id)) : e.mv;
+    const list = pickNew == null ? learnedBy(e.id, e.lv).filter(m => !e.mv.includes(m) && (moveUse(m) || skills()[m])).sort((a, b) => moveValue(b, e.id) - moveValue(a, e.id)) : e.mv;
     for (const m of list) {
       const r = el('div', 'move', `<span class="ty" style="background:${TCOL[mv(m).t]}">${TYPES[mv(m).t]}</span> <b>${mv(m).n}</b><div class="md">${moveDesc(m)}</div>`);
       r.style.cursor = 'pointer';
@@ -484,6 +485,18 @@ function hubBag(body) {
   body.appendChild(reset);
 }
 
+/* Sketch: swap it for any move a Pokémon you've seen learns by level */
+function sketchPanel(e, slot, back) {
+  const box = panel('', back); const ids = new Set();
+  for (const id in G.seen) for (const x of (SP[id] && SP[id].ls) || []) { const m = Array.isArray(x) ? x[1] : x; if ((moveUse(m) || skills()[m]) && !e.mv.includes(m)) ids.add(m); }
+  const list = [...ids].sort((a, b) => mv(a).n.localeCompare(mv(b).n));
+  box.innerHTML = `<h3>Sketch</h3><p class="hint">${SP[e.id].n} can copy one of ${list.length} moves from the Pokémon you've seen. Sketch is replaced by it.</p>`;
+  const f = el('input', 'srch'); f.placeholder = 'Search moves'; box.appendChild(f); const wrap = el('div', ''); box.appendChild(wrap);
+  const draw = () => { wrap.innerHTML = ''; const q = f.value.toLowerCase(); for (const m of list.filter(x => mv(x).n.toLowerCase().includes(q)).slice(0, 80)) {
+    const r = el('div', 'move', `<span class="ty" style="background:${TCOL[mv(m).t]}">${TYPES[mv(m).t]}</span> <b>${mv(m).n}</b><div class="md">${moveDesc(m)}</div>`); r.style.cursor = 'pointer';
+    r.onclick = () => { e.mv[slot] = m; save(); toast(`${SP[e.id].n} sketched ${mv(m).n}!`); back(); }; wrap.appendChild(r); } };
+  f.oninput = draw; draw();
+}
 /* ---------- team (max 10) ---------- */
 function showTeam() {
   show('team'); const t = $('#team'); artBg(t, 2);
@@ -645,6 +658,8 @@ function towerInfo() {
   });
   p.appendChild(ups);
   const sell = el('button', 'sm alt', `Recall ($${Math.floor(t.paid * 0.7)})`); sell.onclick = () => { sellTower(t); towerInfo(); refreshHud(); };
+  if (hasM(t, 'Teleport')) { const b = el('button', 'sm', 'Move (free)'); b.onclick = () => { B.moving = t; B.swapping = null; toast('Tap where it should go'); }; modes.appendChild(b); }
+  if (hasM(t, 'Ally Switch') && B.towers.length > 1) { const b = el('button', 'sm', 'Swap (free)'); b.onclick = () => { B.swapping = t; B.moving = null; toast('Tap a teammate to swap with'); }; modes.appendChild(b); }
   modes.append(more, sell); p.appendChild(modes); p.classList.add('on');
 }
 /* the top bar covers the map, so the map lives in the space under it: hudInset = the bar's bottom edge in canvas pixels */
@@ -718,6 +733,11 @@ function setupInput() {
     if (!B) return; const was = P.size; P.delete(ev.pointerId);
     if (was >= 2) { if (P.size < 2) pinch = null; panned = true; return; }
     if (ev.type === 'pointercancel' || panned) { B.ghost = null; return; }
+    if (B.moving) {   // Teleport: free move to a new spot
+      const t = B.moving, [x, y] = placeAt(ev), ox = t.x, oy = t.y; t.x = t.y = -999; B.moving = null;
+      if (canPlace(t.e, x, y)) { t.x = x; t.y = y; t.tp = null; sfx('place'); } else { t.x = ox; t.y = oy; toast("It can't go there"); }
+      towerInfo(); return;
+    }
     if (B.placing) {
       const [x, y] = placeAt(ev);
       if (placeTower(B.placing, x, y)) { B.sel = null; B.placing = null; B.ghost = null; }
@@ -730,6 +750,7 @@ function setupInput() {
     const [x, y] = toMap(ev), tr = ev.pointerType === 'touch' ? 30 : 22;
     let best = null, bd = tr;
     for (const t of B.towers) { const d = Math.hypot(t.x - x, t.y - 9 - y); if (d < bd) { bd = d; best = t; } }
+    if (B.swapping) { const a = B.swapping; B.swapping = null; if (best && best !== a) { [a.x, a.y, best.x, best.y] = [best.x, best.y, a.x, a.y]; a.tp = best.tp = null; sfx('place'); } towerInfo(); return; }   // Ally Switch
     B.sel = best; B.selE = null;
     if (!best) { let be = null, ed = tr - 2; for (const e of B.en) { const d = Math.hypot(e.x - x, e.y - ((e.air ? 12 : 0) + 6) * ESPR - y); if (e.hp > 0 && d < ed) { ed = d; be = e; } } B.selE = be; }
     towerInfo(); refreshHud();

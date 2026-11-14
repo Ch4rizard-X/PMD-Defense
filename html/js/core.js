@@ -102,7 +102,7 @@ function moveDesc(id) {
   if (m.c !== 1) s += ` - Pow ${m.p || '-'}`;
   if (m.a) s += ` - Acc ${m.a}`;
   s += ` - PP ${m.pp}`;
-  if (!u) s += ' - (no use in battle)';
+  const sk = typeof SKDESC !== 'undefined' && SKDESC[m.n]; if (sk) s += ' - ' + sk; else if (!u) s += ' - (no use in battle)';
   if (id === 206) s += ' - Knockouts with it are 3x as likely to ask to join';
   return s;
 }

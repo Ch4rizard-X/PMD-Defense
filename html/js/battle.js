@@ -126,7 +126,7 @@ function spawn(s, d) {
 function bossAct(e, dt) {
   const T = e.bt; for (const k in T) T[k] -= dt;
   if (e.bwx && !B.bwx) { B.bwx = { k: e.bwx, e }; floater(e, mv(e.bwxm).n, 4); }   // a boss's weather lasts until it is knocked out
-  if (e.bup.length && T.up <= 0) { T.up = 9; const m = e.bup[Math.floor(rnd() * e.bup.length)], M = mv(m); let up = 0;
+  if (e.bup.length && T.up <= 0 && !B.towers.some(t => hasM(t, 'Mist') && Math.hypot(t.x - e.x, t.y - e.y) <= skR(t))) { T.up = 9; const m = e.bup[Math.floor(rnd() * e.bup.length)], M = mv(m); let up = 0;
     for (const [st, c] of M.sc) if ((st === 3 || st === 5 || st === 6) && c > 0 && e.bst[st] < 6) { e.bst[st] = Math.min(6, e.bst[st] + c); up = 1; }
     if (up) floater(e, M.n, 4); }
   if (T.call <= 0) { T.call = 15; const pool = B.waves[B.waves.length - 1].filter(x => !x.boss); if (pool.length) { floater(e, 'Called for help!', 4);
@@ -140,7 +140,7 @@ const SEE_MOVES = new Set([193, 316, 357]);
 function seesWhy(e) {   // why a Pokémon can see hidden Ghost types (null if it can't)
   const k = abKey(e.ab); if (SP[e.id].t.includes(13)) return 'Psychic type';
   if (SP[e.id].t.includes(7)) return 'Ghost type';   // Ghosts see Ghosts
-  const m = e.mv.find(x => SEE_MOVES.has(x)); if (m) return 'knows ' + mv(m).n;
+  const m = e.mv.find(x => SEE_MOVES.has(x) || (DB.dex.moves[x] && DB.dex.moves[x].n === 'Defog')); if (m) return 'knows ' + mv(m).n;
   return k === 'keen-eye' || k === 'frisk' ? 'ability ' + DB.dex.abil[e.ab].n : null;
 }
 function sees(t) { return !!seesWhy(t.e); }
@@ -173,7 +173,7 @@ function placeTower(e, x, y) {
   const c = placeCost(e);
   if (B.cash < c || B.towers.some(t => t.e === e) || B.towers.length >= 10 || !canPlace(e, x, y)) return false;
   B.cash -= c;
-  const t = { e, x, y, dir: 0, anim: 'Idle', at: 0, cd: 0.3, kills: 0, buf: { 1: 0, 3: 0, 5: 0 }, buft: 0, mode: 'first', paid: c, up: [0, 0, 0] };
+  const t = { e, x, y, pt: B.time, dir: 0, anim: 'Idle', at: 0, cd: 0.3, kills: 0, buf: { 1: 0, 3: 0, 5: 0 }, buft: 0, mode: 'first', paid: c, up: [0, 0, 0] };
   B.towers.push(t); sfx('place'); return t;
 }
 const WEATHER = { rain: ['Rain', 'Water moves stronger, Fire moves weaker. Thunder and Hurricane never miss.', 'rgba(60,90,200,.13)'],
@@ -189,7 +189,7 @@ function buyWeather(k) {   // bought during a wave, that wave counts as the firs
 function wavesLeft() { return B.pwx ? B.pwx.until - (B.phase === 'wave' ? B.wave : B.wave + 1) + 1 : 0; }
 function syncWeather() {   // what's in the sky: a living boss's weather, otherwise yours
   if (B.bwx && !(B.bwx.e.hp > 0 && B.en.includes(B.bwx.e))) B.bwx = null;
-  B.weather = B.bwx ? { k: B.bwx.k, boss: 1 } : B.pwx ? { k: B.pwx.k } : null;
+  B.weather = B.bwx ? { k: B.bwx.k, boss: 1 } : B.pwx ? { k: B.pwx.k } : B.mwx && B.mwx.until > B.time ? { k: B.mwx.k } : null;
 }
 /* upgrades for a placed Pokémon, paid with battle cash: Range, Attack speed and Power, 5 levels each, +8% per level.
    Each level costs a share of its placing cost; recalling it refunds 70% of everything paid, upgrades included */
@@ -209,9 +209,9 @@ function chooseTarget(t, list) {
 }
 /* pick the best move against the best target right now */
 function towerAct(t) {
-  const st = monStats(t.e), me = SP[t.e.id];
+  const tf = transformSrc(t), st = tf ? monStats(Object.assign({}, tf.e, { lv: t.e.lv })) : monStats(t.e), me = SP[(tf || t).e.id];   // Transform: a copy of the strongest teammate
   let best = null;
-  const hk = heldKey(t.e), moves = hk.startsWith('choice') ? t.e.mv.slice(0, 1) : t.e.mv;
+  const hk = heldKey(t.e), moves = tf ? tf.e.mv.filter(x => moveUse(x)) : hk.startsWith('choice') ? t.e.mv.slice(0, 1) : t.e.mv;
   for (const m of moves) {
     const use = moveUse(m); if (!use) continue;
     const M = mv(m), r = towerRange(t, m), list = inRange(t, r).filter(e => canHit(t, m, e)); if (!list.length) continue;
@@ -240,7 +240,8 @@ function fire(t, b, st) {
   const M = mv(b.m), fx = DB.fx.moves[b.m] || {};
   t.dir = dirRow(b.tg.x - t.x, b.tg.y - t.y); t.anim = M.c === 2 ? 'Attack' : 'Shoot'; t.at = 0;
   let cd = 5.5 / Math.sqrt(Math.max(5, M.pp)) * (M.pr > 0 ? 0.8 : 1);
-  cd /= 1 + st[5] * STAGE(t.buf[5]) / 150;
+  cd /= 1 + st[5] * STAGE(bufOf(t, 5)) / 150;
+  if (hasM(t, 'Endure') && B.lives < 25) cd /= 1.3; if (B.towers.length && t.tw > B.time) cd /= 1.25; if (t.ssw > B.time) cd /= 1.4; if (t.acu && t.acu.k === 's' && t.acu.u > B.time) cd /= 1.3;   // move skills
   cd /= upK(t, 1);   // Attack speed upgrades
   if (hasT(t, 6)) cd /= 1 + 0.05 * B.towers.filter(o => o !== t && hasT(o, 6)).length;   // Bug: Swarm
   const ak = abKey(t.e.ab), hk = heldKey(t.e), wk = B.weather && B.weather.k, ty = SP[t.e.id].t;
@@ -276,7 +277,7 @@ function applyMove(t, m, e, st) {
   if (e.hp <= 0) return;
   const M = mv(m), use = moveUse(m), me = SP[t.e.id], L = t.e.lv, ak = abKey(t.e.ab), hk = heldKey(t.e), ek = e.ak;
   let acc = M.a ? M.a * (ak === 'compound-eyes' ? 1.3 : 1) * (ak === 'hustle' && M.c === 2 ? 0.8 : 1) * (hk === 'wide-lens' ? 1.1 : hk === 'zoom-lens' ? 1.2 : 1) : 100;
-  if (ak === 'no-guard') acc = 100;
+  if (ak === 'no-guard' || hasM(t, 'Lock-On') || hasM(t, 'Mind Reader')) acc = 100;
   const wk = B.weather && B.weather.k;
   if ((wk === 'rain' && (m === 87 || m === 542)) || (wk === 'hail' && m === 59)) acc = 100;   // Thunder / Hurricane in rain, Blizzard in hail never miss
   if (acc < 100 && rnd() * 100 > acc) { floater(e, 'MISS', 1); return; }
@@ -290,21 +291,26 @@ function applyMove(t, m, e, st) {
     else if (FIXED[m]) dmg = FIXED[m] === 'lv' ? L : FIXED[m] === 'half' ? Math.max(1, Math.floor(e.hp / 2)) : FIXED[m];
     else {
       const phys = M.c === 2;
-      let A = phys ? st[1] * STAGE(t.buf[1]) : st[3] * STAGE(t.buf[3]);
+      let A = phys ? (hasM(t, 'Power Trick') ? Math.max(st[1], st[2]) : st[1]) * STAGE(bufOf(t, 1)) : st[3] * STAGE(bufOf(t, 3));
       if (phys && (ak === 'huge-power' || ak === 'pure-power')) A *= 2;
       if (phys && ak === 'hustle') A *= 1.5;
       if (phys && hk === 'choice-band' || !phys && hk === 'choice-specs') A *= 1.5;
-      const D = phys ? e.st[2] * STAGE(clamp(e.stg[3] + e.bst[3], -6, 6)) : e.st[4] * STAGE(clamp(e.stg[5] + e.bst[5], -6, 6));
+      const D = (phys ? e.st[2] * STAGE(clamp(e.stg[3] + e.bst[3], -6, 6)) : e.st[4] * STAGE(clamp(e.stg[5] + e.bst[5], -6, 6))) * (e.gs > B.time ? e.gsf : 1);   // Guard Split / Octolock
       const hits = ak === 'skill-link' ? M.h[1] : M.h[0] + Math.floor(rnd() * (M.h[1] - M.h[0] + 1));
-      let ty = SP[e.id].t; if (ak === 'scrappy' && (M.t === 0 || M.t === 1)) ty = ty.filter(x => x !== 7);
+      let ty = enTypes(e); if (ak === 'scrappy' && (M.t === 0 || M.t === 1)) ty = ty.filter(x => x !== 7);
       const ef = eff(M.t, ty);
       if (ef === 0 || (ek === 'wonder-guard' && ef <= 1)) { floater(e, 'MISS', 1); return; }
-      const cs = clamp(M.cr + (hasT(t, 15) ? 1 : 0) + (ak === 'super-luck' ? 1 : 0) + (hk === 'scope-lens' || hk === 'razor-claw' ? 1 : 0), 0, 3);
-      const crit = ek !== 'battle-armor' && ek !== 'shell-armor' && rnd() < [1 / 24, 1 / 8, 1 / 2, 1][cs] + mod('crit') ? (ak === 'sniper' ? 2.25 : 1.5) : 1;
+      const cs = clamp(M.cr + (t.fe > B.time ? 2 : 0) + (hasT(t, 15) ? 1 : 0) + (ak === 'super-luck' ? 1 : 0) + (hk === 'scope-lens' || hk === 'razor-claw' ? 1 : 0), 0, 3);
+      const sure = t.lf && ek !== 'battle-armor' && ek !== 'shell-armor'; if (sure) t.lf = 0;   // Laser Focus
+      const crit = sure || ek !== 'battle-armor' && ek !== 'shell-armor' && rnd() < [1 / 24, 1 / 8, 1 / 2, 1][cs] + mod('crit') ? (ak === 'sniper' ? 2.25 : 1.5) : 1;
       let pw = M.p || 60; if (ak === 'technician' && pw <= 60) pw *= 1.5;
       let mlt = (me.t.includes(M.t) ? (ak === 'adaptability' ? 2 : 1.5) + mods().stab || (ak === 'adaptability' ? 2 : 1.5) : 1) * ef * crit;
       mlt *= 1 + (mods().power || 0) + (mods()['tp' + M.t] || 0);
       mlt *= upK(t, 2);   // Power upgrades
+      if (M.t === 12 && t.chg) { mlt *= 2; t.chg = 0; } if (M.t === 12 && e.elz > B.time) mlt *= 2;   // Charge / Electrify
+      if (t.dt > B.time) mlt *= 2; if (t.enc) { mlt *= 2; t.enc = 0; } if (t.hh > B.time) mlt *= 1.25; if (!phys && t.th > B.time) mlt *= 1.2;   // Double Team / Encore / Helping Hand / Take Heart
+      if (t.acu && t.acu.k === 'd' && t.acu.u > B.time) mlt *= 1.3; if (B.terr && B.terr[M.t] > B.time) mlt *= 1.3;   // Acupressure / terrains
+      if (hasM(t, 'Ingrain')) mlt *= 1 + Math.min(0.3, 0.05 * Math.floor((B.time - (t.pt || 0)) / 10));
       if (e.boss) mlt *= 1 + (mods().bossDmg || 0) + (hasT(t, 1) ? 0.2 : 0);   // Fighting: Boss hitter
       if (hasT(t, 5)) { const rk = e.rk || (e.rk = new Set()); if (!rk.has(t)) { rk.add(t); mlt *= 1.3; } }   // Rock: Crush
       if (B.towers.some(o => o !== t && hasT(o, 17) && Math.hypot(o.x - t.x, o.y - t.y) <= 90)) mlt *= 1.05;   // Fairy: Aura
@@ -379,10 +385,10 @@ function quirkHit(t, e, dmg) {
 }
 function hurt(t, e, dmg) {
   const phase = t && hasT(t, 7);   // Ghost: Phase - attacks go through Protect shields
-  if (!phase && e.prot && e.sh <= 0 && e.shcd <= 0 && e.hp - dmg > 0) { e.shm = e.sh = Math.ceil(e.max * 0.25); e.sht = 3; e.shcd = 9; floater(e, mv(e.prot).n, 4); }
+  if (!phase && !(e.nt > B.time) && e.prot && e.sh <= 0 && e.shcd <= 0 && e.hp - dmg > 0) { e.shm = e.sh = Math.ceil(e.max * 0.25); e.sht = 3; e.shcd = 9; floater(e, mv(e.prot).n, 4); }
   if (!phase && e.sh > 0) { const a = Math.min(e.sh, dmg); e.sh -= a; dmg -= a; if (e.sh <= 0) e.sht = 0; if (dmg <= 0) { e.hurt = 0.1; return; } }
   e.hp -= dmg;
-  if (e.heal && !e.healed && e.hp > 0 && e.hp < e.max * 0.4) { e.healed = 1; e.hp = Math.min(e.max, e.hp + Math.ceil(e.max * e.heal.hl)); floater(e, mv(e.heal.m).n, 4); } e.hurt = 0.25; floater(e, String(dmg), 0);
+  if (e.heal && !e.healed && !(e.nt > B.time) && e.hp > 0 && e.hp < e.max * 0.4) { e.healed = 1; e.hp = Math.min(e.max, e.hp + Math.ceil(e.max * e.heal.hl)); floater(e, mv(e.heal.m).n, 4); } e.hurt = 0.25; floater(e, String(dmg), 0);
   if (e.hp <= 0) ko(t, e);
 }
 function ko(t, e) {
@@ -400,7 +406,7 @@ function ko(t, e) {
     // recruiting: knocked-out wild Pokémon sometimes ask to join (only species you don't have yet)
     // you choose whether to take it, like the original; duplicates allowed; a declined species stops asking for the rest of this battle
     if (sp.anim && !B.declined.has(e.id) && !B.asks.some(a => a.id === e.id)) {
-      const p = (e.boss ? 0.04 + mod('bossRecruit') : 0.005 * (sp.cr / 255) * (1 + B.th * 0.05) * (1 - 0.5 * clamp((B.th - 4) / 5, 0, 1)))   /* halved from tier 9 up */ * (1 + mod('recruit')) * (e.fs ? 3 : 1);
+      const p = (e.boss ? 0.04 + mod('bossRecruit') : 0.005 * (sp.cr / 255) * (1 + B.th * 0.05) * (1 - 0.5 * clamp((B.th - 4) / 5, 0, 1)))   /* halved from tier 9 up */ * (1 + mod('recruit')) * (e.fs ? 3 : 1) * (e.lure > B.time ? 2 : 1);
       if (rnd() < p) { B.asks.push({ id: e.id, lv: e.lv, ab: e.ab, nat: e.nat, iv: e.iv }); sfx('join'); if (typeof askJoin === 'function') askJoin(); }
     }
   }
@@ -444,12 +450,15 @@ function tick(dt) {
         : ty.includes(14) || ['ice-body', 'snow-cloak', 'overcoat', 'magic-guard'].includes(e.ak);
       if (!safe) { e.wdot = (e.wdot || 0) + e.max * 0.02 * (1 + mod('weatherChip')) * dt * (e.boss ? 0.4 : 1); if (e.wdot >= 1) { const d = Math.floor(e.wdot); e.wdot -= d; e.hp -= d; if (e.hp <= 0) { ko(null, e); continue; } } }
     }
+    if (e.akOff && B.time > e.akOff) { e.ak = e.ak0; e.akOff = 0; }
+    if (e.cu && e.cu.left > 0) { const d0 = Math.min(e.cu.left, e.cu.dps * dt); e.cu.left -= d0; e.cud = (e.cud || 0) + d0; if (e.cud >= 1) { const d = Math.floor(e.cud); e.cud -= d; e.hp -= d; if (e.hp <= 0) { ko(B.towers.includes(e.cu.t) ? e.cu.t : null, e); continue; } } }
+    if (e.pm && B.time >= e.pm) { e.pm = 0; floater(e, 'Perish', 4); hurt(B.towers.includes(e.pmT) ? e.pmT : null, e, Math.ceil(e.max * 0.3)); if (e.hp <= 0) continue; }
     e.hurt = Math.max(0, e.hurt - dt); e.imm -= dt; e.chill = (e.chill || 0) - dt; e.wsl = (e.wsl || 0) - dt;
     if (e.pst > 0) { e.ptt -= dt; if (e.ptt <= 0) e.pst = 0; else if (e.ak !== 'magic-guard') { e.pd = (e.pd || 0) + e.max * 0.01 * e.pst * dt * (e.boss ? 0.4 : 1); if (e.pd >= 1) { const d = Math.floor(e.pd); e.pd -= d; e.hp -= d; if (e.hp <= 0) { ko(B.towers.includes(e.psrc) ? e.psrc : null, e); continue; } } } }
     if (e.sht > 0) { e.sht -= dt; if (e.sht <= 0) e.sh = 0; } e.shcd -= dt;
     if (e.regen) { e.rg = (e.rg || 0) + e.max * 0.01 * dt; if (e.rg >= 1) { const h = Math.floor(e.rg); e.rg -= h; e.hp = Math.min(e.max, e.hp + h); } }
-    if (e.dashMv) { if (e.dash > 0) e.dash -= dt; else if (e.d > 0 && !e.stop && !e.sts && (e.dt2 -= dt) <= 0) { e.dash = 0.6; e.dt2 = 4 + rnd() * 2; } }
-    if (e.tele && !e.stop && !e.sts && e.d > 0 && (e.tt -= dt) <= 0) { e.tt = 7 + rnd() * 3; e.d = Math.min(routeOf(e).len - 30, e.d + 70); e.px = null; floater(e, 'Teleport', 4); }
+    if (e.dashMv) { if (e.dash > 0) e.dash -= dt; else if (e.d > 0 && !e.stop && !e.sts && !(e.nt > B.time) && (e.dt2 -= dt) <= 0) { e.dash = 0.6; e.dt2 = 4 + rnd() * 2; } }
+    if (e.tele && !e.stop && !e.sts && !(e.nt > B.time) && e.d > 0 && (e.tt -= dt) <= 0) { e.tt = 7 + rnd() * 3; e.d = Math.min(routeOf(e).len - 30, e.d + 70); e.px = null; floater(e, 'Teleport', 4); }
     if (e.boss && e.d > 0 && e.bt) bossAct(e, dt);
     if (e.stgt > 0) { e.stgt -= dt; if (e.stgt <= 0) e.stg = { 3: 0, 5: 0, 6: 0 }; }
     if (e.sts) {
@@ -462,9 +471,10 @@ function tick(dt) {
       let v = e.spd * e.pace * (1 + 0.12 * Math.sin(B.time * e.sw * 1.7 + e.ph)) * STAGE(clamp(e.stg[6] + e.bst[6], -6, 6)) * (e.dash > 0 ? 3 : 1);
       if (e.ak === 'quick-feet' && e.sts) v *= 1.5;
       if (e.ak === 'speed-boost') { e.sbt += dt; v *= Math.min(2, 1 + e.sbt / 40); }
+      v *= skSpeed(e); if (e.back > B.time) v = -Math.abs(v) * 0.6; if (decoyBlocks(e)) v = 0;   // move skills
       if (e.chill > 0) v *= 0.85; if (e.wsl > 0) v *= 0.9; if (vines.some(([x, y, r]) => Math.hypot(x - e.x, y - e.y) <= r)) v *= 0.9;   // Ice / Water / Grass quirks
       if (e.sts === 'paralysis') v *= 0.5; if (e.sts === 'confusion') v *= (Math.sin(B.time * 6) > 0 ? 0.6 : -0.3);
-      e.d += v * dt;
+      e.d = Math.max(e.back > B.time ? 1 : -1e9, e.d + v * dt);
     }
     if (e.dig) { e.digt -= dt; if (e.digt <= 0) { e.under = !e.under; e.digt = e.under ? 2.5 : 2.2; } }
     if (e.hide) { e.rev -= dt; for (const t of B.towers) if (sees(t) && Math.hypot(t.x - e.x, t.y - e.y) <= maxRange(t) * (hasT(t, 13) ? 1.5 : 1)) { e.rev = 0.4; break; } }
@@ -488,6 +498,7 @@ function tick(dt) {
     if (t.anim !== 'Idle' && t.at > animLen(t.e.id, t.anim)) { t.anim = 'Idle'; t.at = 0; }
     if (t.cd <= 0 && B.phase === 'wave') { if (!towerAct(t)) t.cd = 0.15; }
   }
+  skillTick(dt);
   if (B.q2) { for (const a of B.q2) { a.t -= dt; if (a.t <= 0) a.fn(); } B.q2 = B.q2.filter(a => a.t > 0); }
   for (const p of B.proj) {
     p.at += dt;
@@ -584,6 +595,7 @@ function drawBattle(g) {
   drawGates(g, M);
   if (B.sel) { const r = Math.max(...B.sel.e.mv.filter(moveUse).map(m => towerRange(B.sel, m)), 40); ring(B.sel.x, B.sel.y, r, true); }
   if (B.ghost && B.placing) { const r = Math.max(...B.placing.mv.filter(moveUse).map(m => RANGE[mv(m).c] * (1 + Math.min(0.25, B.placing.lv / 400))), 40); ring(B.ghost.x, B.ghost.y, r, B.ghost.ok); }
+  drawSkills(g);   // traps and decoys under the Pokémon
   const ents = [];
   for (const t of B.towers) ents.push({ y: t.y, f: () => { if (B.sel === t) { const p = 0.5 + 0.5 * Math.sin(B.time * 6); g.beginPath(); g.ellipse(t.x, t.y, 15 * SPR, 6 * SPR, 0, 0, 7); g.strokeStyle = `rgba(255,216,74,${0.5 + 0.5 * p})`; g.lineWidth = 2; g.stroke(); g.lineWidth = 1; } marker(g, true, t.e.id, t.x, t.y, SPR); drawMon(g, t.e.id, t.anim, t.at, t.dir, t.x, t.y, null, t.anim === 'Idle'); if (t.buft > 0) { g.fillStyle = '#f84'; g.fillRect(t.x - 2, t.y - 30 * SPR, 4, 4); } } });
   for (const e of B.en) ents.push({ y: e.y, f: () => {
@@ -693,3 +705,169 @@ function marker(g, team, id, x, y, sc) {   // PMD Red's own markers: yellow ring
 }
 function shadow(g, x, y, big, sc) {
   sc = sc || SPR; g.fillStyle = 'rgba(0,0,0,.28)'; g.beginPath(); g.ellipse(x, y, (big ? 12 : 8) * sc, (big ? 5 : 3.5) * sc, 0, 0, 7); g.fill(); }
+
+/* ---------- move skills: status moves given a tower-defence job (each one picked by the player, Nov 2026).
+   They work on their own timer, beside the Pokémon's attacks. Effects use each move's own graphics. ---------- */
+let SKILL = null, SKID = {};
+const MID = n => SKID[n] || (SKID[n] = +(Object.keys(DB.dex.moves).find(k => DB.dex.moves[k].n === n) || 0));
+const hasM = (t, n) => t.e.mv.includes(MID(n));
+function skR(t) { return RANGE[3] * (1 + Math.min(0.25, t.e.lv / 400) + mod('range')) * upK(t, 0) * (hasT(t, 2) ? 1.15 : 1) * (t.acu && t.acu.k === 'r' && t.acu.u > B.time ? 1.2 : 1); }
+const visible = e => e.hp > 0 && e.d > 0 && !e.under && !(e.hide && !(e.rev > 0));
+const skIn = (t, r) => B.en.filter(e => visible(e) && Math.hypot(e.x - t.x, e.y - t.y) <= (r || skR(t)));
+const skT = t => { const l = skIn(t); return l.length ? chooseTarget(t, l) : null; };
+const stopE = (e, s) => { e.stop = Math.max(e.stop, e.boss ? s / 2 : s); };
+const slowE = (e, k, f, d) => { (e.sl || (e.sl = {}))[k] = [f, B.time + d]; };
+function skSpeed(e) { let v = 1; if (e.sl) for (const k in e.sl) { const [f, u] = e.sl[k]; if (u > B.time) v *= f; else delete e.sl[k]; } if (e.tr && e.tr[1] > B.time) v *= e.tr[0]; return v; }
+function enTypes(e) { const o = e.tyo; if (!o || o.u <= B.time) return SP[e.id].t; return o.add ? [...new Set(SP[e.id].t.concat(o.t))].slice(0, 3) : o.t; }
+function skFx(m, x, y, dir) { const f = DB.fx.moves[m]; if (f) { const r = f.h || f.u; if (r) addFx(r, x, y - 8 * ESPR, dir || 0); } }
+function skUse(t, m, e) { const f = DB.fx.moves[m]; if (f && f.u) addFx(f.u, t.x, t.y, t.dir); if (e) { t.dir = dirRow(e.x - t.x, e.y - t.y); skFx(m, e.x, e.y, t.dir); } t.anim = 'Shoot'; t.at = 0; }
+const near = (t, r) => B.towers.filter(o => o !== t && Math.hypot(o.x - t.x, o.y - t.y) <= (r || 90));
+function skAttack(t, m, st, src) {   // a full attack from a skill (Copycat, Metronome, Nature Power): same hit rules as a normal attack
+  const M = mv(m); if (!M) return false; const r = RANGE[M.c] ? towerRange(t, m) : skR(t), list = inRange(t, r).filter(e => canHit(t, m, e)); if (!list.length) return false;
+  const tg = chooseTarget(t, list), fx = DB.fx.moves[m] || {}; t.dir = dirRow(tg.x - t.x, tg.y - t.y); t.anim = M.c === 2 ? 'Attack' : 'Shoot'; t.at = 0;
+  if (fx.u) addFx(fx.u, t.x, t.y, t.dir);
+  const hit = g => { const ts = aoe(M) ? (M.c === 3 ? B.en.filter(e => e.hp > 0 && Math.hypot(e.x - g.x, e.y - g.y) < 46 && canHit(t, m, e)) : list) : [g]; for (const e of ts) applyMove(t, m, e, st); };
+  if (fx.p && M.c !== 2) B.proj.push({ x: t.x, y: t.y - 8 * SPR, tg, fx: fx.p, sp: 300, at: 0, done: hit, hfx: fx.h });
+  else { B.q2 = B.q2 || []; B.q2.push({ t: 0.12, fn: () => { if (tg.hp > 0 || aoe(M)) { hit(tg); if (fx.h) addFx(fx.h, tg.x, tg.y - 8 * ESPR, t.dir); } } }); }
+  if (src) floater(t, src, 4); return true;
+}
+function natureMove() {   // Nature Power, Gen VII rules: the move depends on where the battle is
+  const terr = B.terr || {}, now = B.time;
+  if (terr[11] > now) return 'Energy Ball'; if (terr[17] > now) return 'Moonblast'; if (terr[12] > now) return 'Thunderbolt'; if (terr[13] > now) return 'Psychic';
+  const S = DB.ts[B.set], T = S.types || [], nm = S.name || '';
+  if (B.M.liq === 'lava') return 'Lava Plume';
+  if (T.includes(14)) return 'Ice Beam';
+  if (B.M.liq === 'water' && T.includes(10)) return 'Hydro Pump';
+  if (/cave|cavern|crevice|grotto|ruin|tunnel|depth|crater|chamber|underground/i.test(nm)) return 'Power Gem';
+  if (T.includes(11) || /wood|forest|jungle|meadow|field|garden|grass/i.test(nm)) return 'Energy Ball';
+  if (T.includes(4) || T.includes(5) || /sand|desert|mt |mount|peak|rock|cliff|canyon/i.test(nm)) return 'Earth Power';
+  return 'Tri Attack';
+}
+function nearestPath(x, y) { let b = null; B.M.routes.forEach((rt, r) => { for (let d = 0; d < rt.len; d += 6) { const [px, py] = pathAt(B.M, d, rt); const k = Math.hypot(px - x, py - y); if (!b || k < b.k) b = { r, d, x: px, y: py, k }; } }); return b; }
+const SLOWA = (f, d, key) => (t, m) => { const l = skIn(t); if (!l.length) return false; for (const e of l) slowE(e, key || 'growl', f, d); skUse(t, m, l[0]); return true; };
+const STOP1 = s => (t, m) => { const e = skT(t); if (!e) return false; stopE(e, s); skUse(t, m, e); return true; };
+const TYPEC = (ty, add) => (t, m) => { const e = skT(t); if (!e) return false; e.tyo = { t: [ty], add, u: B.time + 6 }; skUse(t, m, e); return true; };
+const NOTRICK = (t, m) => { const l = skIn(t).filter(e => e.prot || e.heal || e.dashMv || e.tele); const e = l.length ? chooseTarget(t, l) : null; if (!e) return false; e.nt = B.time + 6; floater(e, 'No tricks', 4); skUse(t, m, e); return true; };
+const TRAP = kind => (t, m) => { if (!t.tp) t.tp = nearestPath(t.x, t.y); if (!t.tp) return false; B.traps = (B.traps || []).filter(x => x.t !== t || x.m !== m); B.traps.push({ t, m, kind, r: t.tp.r, d: t.tp.d, x: t.tp.x, y: t.tp.y, hit: new Set() }); return true; };
+const DECOY = (t, m) => { const p = nearestPath(t.x, t.y); if (!p) return false; B.decoys = (B.decoys || []).filter(x => x.t !== t); B.decoys.push({ t, m, r: p.r, d: p.d, x: p.x, y: p.y, u: 0 }); return true; };
+const TEAMB = (key, dur) => (t, m) => { if (!B.en.some(visible)) return false; for (const o of B.towers) o[key] = B.time + dur; skUse(t, m); floater(t, mv(m).n, 4); return true; };
+const NEARB = (key, dur) => (t, m) => { const n = near(t); if (!n.length || !B.en.some(visible)) return false; for (const o of n) o[key] = B.time + dur; skUse(t, m); return true; };
+const SELFB = (key, dur) => (t, m) => { if (!skIn(t, skR(t) * 1.2).length) return false; t[key] = B.time + dur; skUse(t, m); return true; };
+const WXSK = k => (t, m) => { if (!B.en.some(visible) || B.bwx || B.pwx) return false; B.mwx = { k, until: B.time + 20 }; syncWeather(); skUse(t, m); floater(t, mv(m).n, 4); return true; };
+const TERRAIN = ty => (t, m) => { if (!B.en.some(visible)) return false; (B.terr || (B.terr = {}))[ty] = B.time + 10; skUse(t, m); floater(t, mv(m).n, 4); return true; };
+const COPYB = (t, m) => { const l = skIn(t).filter(e => e.bst && e.bst[6] > 0); if (!l.length) return false; const e = l[0]; t.buf[5] = Math.max(t.buf[5], e.bst[6]); t.buft = 12; skUse(t, m, e); return true; };
+const COPYCAT = (t, m) => { const o = near(t, 1e9).sort((a, b) => Math.hypot(a.x - t.x, a.y - t.y) - Math.hypot(b.x - t.x, b.y - t.y))[0]; if (!o) return false;
+  const ms = o.e.mv.filter(x => moveUse(x) === 'dmg').sort((a, b) => (mv(b).p || 0) - (mv(a).p || 0)); return ms.length ? skAttack(t, ms[0], monStats(o.e), mv(m).n) : false; };
+function buildSkills() {
+  const D = {   // name: [cooldown s, action(t, move) -> used?] ; passive ones have no action (handled where they matter)
+    'Growl': [6, SLOWA(0.8, 3)], 'Baby-Doll Eyes': [6, SLOWA(0.8, 3)], 'Play Nice': [6, SLOWA(0.8, 3)], 'Feather Dance': [6, SLOWA(0.8, 3)], 'Noble Roar': [6, SLOWA(0.8, 3)],
+    'Parting Shot': [6, SLOWA(0.8, 3)], 'Eerie Impulse': [6, SLOWA(0.8, 3)], 'Confide': [6, SLOWA(0.8, 3)],
+    'Sand Attack': [6, STOP1(0.6)], 'Mean Look': [12, STOP1(1)], 'Block': [12, STOP1(1)], 'Attract': [12, STOP1(1.2)],
+    'Quash': [10, (t, m) => { const e = skT(t); if (!e) return false; slowE(e, 'quash', 0.5, 2); skUse(t, m, e); return true; }],
+    'Smokescreen': [8, (t, m) => { const l = skIn(t); if (!l.length) return false; for (const e of l) e.stop = Math.max(e.stop, 0.4); skUse(t, m, l[0]); return true; }],
+    'Fairy Lock': [30, (t, m) => { const l = skIn(t); if (!l.length) return false; for (const e of l) stopE(e, 1); skUse(t, m, l[0]); return true; }],
+    'Charm': [8, (t, m) => { const e = skT(t); if (!e) return false; e.back = B.time + (e.boss ? 0.75 : 1.5); skUse(t, m, e); return true; }],
+    'Roar': [10, (t, m) => { const l = skIn(t).filter(e => !e.boss); const e = l.length ? chooseTarget(t, l) : null; if (!e) return false; e.d = Math.max(1, e.d - 60); e.px = null; skUse(t, m, e); return true; }],
+    'Curse': [12, (t, m) => { const e = skT(t); if (!e) return false; e.cu = { left: e.max * (e.boss ? 0.1 : 0.25), dps: e.max * (e.boss ? 0.1 : 0.25) / 8, t }; skUse(t, m, e); return true; }],
+    'Disable': [8, NOTRICK],
+    'Soak': [8, TYPEC(10, false)], 'Magic Powder': [8, TYPEC(13, false)], 'Trick-or-Treat': [8, TYPEC(7, true)], 'Forest’s Curse': [8, TYPEC(11, true)],
+    'Electrify': [12, (t, m) => { const e = skT(t); if (!e) return false; e.elz = B.time + 6; skUse(t, m, e); return true; }],
+    'Gastro Acid': [10, (t, m) => { const l = skIn(t).filter(e => e.ak && !e.akOff); const e = l.length ? chooseTarget(t, l) : null; if (!e) return false; e.ak0 = e.ak; e.ak = null; e.akOff = B.time + 8; floater(e, 'Ability off', 4); skUse(t, m, e); return true; }],
+    'Haze': [10, (t, m) => { const l = skIn(t).filter(e => e.bst && Object.values(e.bst).some(v => v > 0)); if (!l.length) return false; for (const e of l) e.bst = { 3: 0, 5: 0, 6: 0 }; skUse(t, m, l[0]); return true; }],
+    'Topsy-Turvy': [12, (t, m) => { const l = skIn(t).filter(e => e.bst && Object.values(e.bst).some(v => v > 0)); if (!l.length) return false; const e = l[0]; for (const k in e.bst) e.bst[k] = -e.bst[k]; skUse(t, m, e); return true; }],
+    'Pain Split': [15, (t, m) => { const l = skIn(t).filter(e => !e.boss && e.hp > e.max / 2); const e = l.length ? chooseTarget(t, l) : null; if (!e) return false; const to = Math.ceil((e.hp + e.max / 2) / 2); hurt(t, e, e.hp - to); skUse(t, m, e); return true; }],
+    'Guard Split': [12, (t, m) => { const e = skT(t); if (!e) return false; e.gs = B.time + 6; e.gsf = 0.75; skUse(t, m, e); return true; }],
+    'Octolock': [14, (t, m) => { const e = skT(t); if (!e) return false; stopE(e, 1); e.gs = B.time + 6; e.gsf = 0.8; skUse(t, m, e); return true; }],
+    'Perish Song': [30, (t, m) => { const l = skIn(t).filter(e => !e.boss && !e.pm); if (!l.length) return false; for (const e of l) { e.pm = B.time + 6; e.pmT = t; } skUse(t, m, l[0]); floater(t, 'Perish Song', 4); return true; }],
+    'Sweet Scent': [10, (t, m) => { const l = skIn(t); if (!l.length) return false; for (const e of l) e.lure = B.time + 5; skUse(t, m, l[0]); return true; }],
+    'Psych Up': [15, COPYB], 'Heart Swap': [15, COPYB],
+    'Trick Room': [30, (t, m) => { const l = skIn(t); if (l.length < 2) return false; const s = l.map(e => e.spd), lo = Math.min(...s), hi = Math.max(...s); for (const e of l) e.tr = [clamp((lo + hi - e.spd) / e.spd, 0.4, 1.5), B.time + 6]; skUse(t, m, l[0]); return true; }],
+    'Psycho Shift': [10, (t, m) => { const l = skIn(t), a = l.find(e => e.sts && e.sts !== 'yawn'), b = a && l.find(e => e !== a && !e.sts); if (!b) return false; inflict(b, a.sts, t); skUse(t, m, b); return true; }],
+    'Speed Swap': [12, (t, m) => { const e = skT(t); if (!e) return false; slowE(e, 'swap', 0.6, 4); t.ssw = B.time + 4; skUse(t, m, e); return true; }],
+    'Focus Energy': [20, SELFB('fe', 10)], 'Take Heart': [15, SELFB('th', 8)], 'Double Team': [20, SELFB('dt', 5)],
+    'Laser Focus': [8, (t, m) => { if (t.lf) return false; t.lf = 1; return true; }], 'Charge': [8, (t, m) => { if (t.chg) return false; t.chg = 1; return true; }],
+    'Acupressure': [15, (t, m) => { if (!skIn(t, skR(t) * 1.2).length) return false; t.acu = { k: pick(['d', 's', 'r']), u: B.time + 6 }; skUse(t, m); floater(t, { d: 'Power up', s: 'Speed up', r: 'Range up' }[t.acu.k], 4); return true; }],
+    'Helping Hand': [15, NEARB('hh', 6)], 'Encore': [10, (t, m) => { const n = near(t).filter(o => !o.enc); if (!n.length || !B.en.some(visible)) return false; n[0].enc = 1; skUse(t, m); return true; }],
+    'Tailwind': [30, TEAMB('tw', 6)],
+    'Rain Dance': [60, WXSK('rain')], 'Sunny Day': [60, WXSK('sun')], 'Sandstorm': [60, WXSK('sand')], 'Hail': [60, WXSK('hail')], 'Snowscape': [60, WXSK('hail')],
+    'Electric Terrain': [30, TERRAIN(12)], 'Grassy Terrain': [30, TERRAIN(11)], 'Misty Terrain': [30, TERRAIN(17)], 'Psychic Terrain': [30, TERRAIN(13)],
+    'Stealth Rock': [20, TRAP('rock')], 'Spikes': [20, TRAP('spikes')], 'Toxic Spikes': [20, TRAP('toxic')], 'Sticky Web': [20, TRAP('web')],
+    'Substitute': [20, DECOY], 'Shed Tail': [20, DECOY],
+    'Copycat': [6, COPYCAT], 'Mimic': [6, COPYCAT],
+    'Metronome': [5, (t, m) => { const all = Object.keys(DB.dex.moves).map(Number).filter(x => moveUse(x) === 'dmg' && !OHKO.has(x)); return skAttack(t, pick(all), monStats(t.e), 'Metronome'); }],
+    'Nature Power': [6, (t, m) => { const n = natureMove(); return skAttack(t, MID(n), monStats(t.e), n); }],
+    // passives (no action)
+    'Endure': [0], 'Ingrain': [0], 'Baton Pass': [0], 'Lock-On': [0], 'Mind Reader': [0], 'Power Trick': [0], 'Defog': [0], 'Mist': [0], 'Transform': [0],
+    'Teleport': [0], 'Ally Switch': [0], 'Sketch': [0], 'Splash': [0], 'Baneful Bunker': [0], 'Burning Bulwark': [0], 'Silk Trap': [0],
+  };
+  D['Whirlwind'] = D['Roar']; D['Instruct'] = D['Encore'];
+  SKILL = {}; for (const n in D) { const id = MID(n); if (id) SKILL[id] = { n, cd: D[n][0], act: D[n][1] }; }
+  return SKILL;
+}
+const skills = () => SKILL || buildSkills();
+const SKDESC = {
+  'Growl': 'Enemies in range move 20% slower for 3 s', 'Baby-Doll Eyes': 'Enemies in range move 20% slower for 3 s', 'Play Nice': 'Enemies in range move 20% slower for 3 s', 'Feather Dance': 'Enemies in range move 20% slower for 3 s',
+  'Noble Roar': 'Enemies in range move 20% slower for 3 s', 'Parting Shot': 'Enemies in range move 20% slower for 3 s', 'Eerie Impulse': 'Enemies in range move 20% slower for 3 s', 'Confide': 'Enemies in range move 20% slower for 3 s',
+  'Sand Attack': 'The target stops for 0.6 s (every 6 s)', 'Mean Look': 'The target stops for 1 s (every 12 s)', 'Block': 'The target stops for 1 s (every 12 s)', 'Attract': 'The target stops for 1.2 s (every 12 s)',
+  'Quash': 'The target moves 50% slower for 2 s (every 10 s)', 'Smokescreen': 'Enemies in range stop for 0.4 s (every 8 s)', 'Fairy Lock': 'Enemies in range stop for 1 s (every 30 s)',
+  'Charm': 'The target walks backward for 1.5 s (every 8 s)', 'Roar': 'Pushes the target back along the path (not bosses, every 10 s)', 'Whirlwind': 'Pushes the target back along the path (not bosses, every 10 s)',
+  'Curse': 'The target loses 25% of its max HP over 8 s (bosses 10%, every 12 s)', 'Disable': 'The target can\'t shield, heal, dash or teleport for 6 s',
+  'Soak': 'The target becomes pure Water type for 6 s', 'Magic Powder': 'The target becomes pure Psychic type for 6 s', 'Trick-or-Treat': 'The target also counts as Ghost type for 6 s', 'Forest’s Curse': 'The target also counts as Grass type for 6 s',
+  'Electrify': 'Electric attacks deal double damage to the target for 6 s (every 12 s)', 'Gastro Acid': 'The target\'s ability stops working for 8 s',
+  'Haze': 'Removes the stat boosts of enemies in range (every 10 s)', 'Topsy-Turvy': 'Turns an enemy\'s stat boosts into drops (every 12 s)',
+  'Pain Split': 'A non-boss target over half HP loses about a quarter of its max HP (every 15 s)', 'Guard Split': 'The target\'s defences drop 25% for 6 s (every 12 s)',
+  'Octolock': 'The target stops for 1 s, then its defences drop 20% for 6 s (every 14 s)', 'Perish Song': 'Non-boss enemies in range lose 30% of their max HP 6 s later (every 30 s)',
+  'Sweet Scent': 'Enemies in range are 2x as likely to ask to join if knocked out within 5 s', 'Psych Up': 'Copies an enemy\'s Speed boosts as attack speed (every 15 s)', 'Heart Swap': 'Copies an enemy\'s Speed boosts as attack speed (every 15 s)',
+  'Trick Room': 'For 6 s the fastest enemies in range become the slowest (every 30 s)', 'Psycho Shift': 'Copies a status condition onto another enemy in range (every 10 s)',
+  'Speed Swap': 'The target moves 40% slower and this Pokémon attacks 40% faster for 4 s (every 12 s)',
+  'Focus Energy': 'Much higher critical-hit chance for 10 s (every 20 s)', 'Laser Focus': 'Every 8 s its next attack is a sure critical hit', 'Charge': 'Every 8 s its next Electric attack deals double damage',
+  'Double Team': 'For 5 s its attacks hit twice (every 20 s)', 'Take Heart': 'Its special attacks deal +20% for 8 s (every 15 s)', 'Acupressure': 'A random boost for 6 s: +30% damage, attack speed or +20% range (every 15 s)',
+  'Helping Hand': 'Teammates close by deal +25% damage for 6 s (every 15 s)', 'Encore': 'Every 10 s, the next attack of a teammate close by happens twice', 'Instruct': 'Every 10 s, the next attack of a teammate close by happens twice',
+  'Tailwind': 'All your Pokémon attack 25% faster for 6 s (every 30 s)',
+  'Rain Dance': 'Rain for 20 s (every 60 s)', 'Sunny Day': 'Sun for 20 s (every 60 s)', 'Sandstorm': 'A sandstorm for 20 s (every 60 s)', 'Hail': 'Hail for 20 s (every 60 s)', 'Snowscape': 'Hail for 20 s (every 60 s)',
+  'Electric Terrain': 'Your team\'s Electric moves deal +30% for 10 s (every 30 s)', 'Grassy Terrain': 'Your team\'s Grass moves deal +30% for 10 s (every 30 s)',
+  'Misty Terrain': 'Your team\'s Fairy moves deal +30% for 10 s (every 30 s)', 'Psychic Terrain': 'Your team\'s Psychic moves deal +30% for 10 s (every 30 s)',
+  'Stealth Rock': 'Rocks on the nearest path: each enemy crossing takes Rock damage once (renewed every 20 s)', 'Spikes': 'Spikes on the nearest path: each enemy crossing loses 8% of its max HP once (renewed every 20 s)',
+  'Toxic Spikes': 'Spikes on the nearest path poison enemies crossing (renewed every 20 s)', 'Sticky Web': 'A web on the nearest path: enemies crossing move 40% slower for 3 s (renewed every 20 s)',
+  'Substitute': 'A decoy on the path holds enemies up for 2 s (every 20 s)', 'Shed Tail': 'A decoy on the path holds enemies up for 2 s (every 20 s)',
+  'Copycat': 'Uses the nearest teammate\'s strongest attack at its power (every 6 s)', 'Mimic': 'Uses the nearest teammate\'s strongest attack at its power (every 6 s)',
+  'Metronome': 'Uses a random attack (every 5 s)', 'Nature Power': 'Uses an attack that depends on the map (every 6 s)',
+  'Endure': 'Attacks 30% faster while you have under 25 lives', 'Ingrain': '+5% damage for every 10 s it stays placed (up to +30%)', 'Baton Pass': 'Its stat boosts also apply to teammates close by',
+  'Lock-On': 'Its attacks never miss', 'Mind Reader': 'Its attacks never miss', 'Power Trick': 'Physical attacks use its Attack or Defense, whichever is higher', 'Defog': 'Sees hidden Ghost types',
+  'Mist': 'Bosses in its range can\'t raise their stats', 'Transform': 'Fights with the stats and moves of your strongest placed teammate, at its own level',
+  'Teleport': 'Can be moved to a new spot during battle for free', 'Ally Switch': 'Can swap spots with a placed teammate during battle for free',
+  'Sketch': 'Out of battle, can be swapped for a move learned by a Pokémon you\'ve seen', 'Splash': 'Enemies right next to it move 10% slower',
+  'Baneful Bunker': 'Enemies right next to it may get poisoned', 'Burning Bulwark': 'Enemies right next to it may get burned', 'Silk Trap': 'Enemies right next to it move 30% slower for 2 s',
+};
+/* per-tick work: skill timers, traps, decoys, adjacency auras */
+function skillTick(dt) {
+  const S = skills(), wave = B.phase === 'wave';
+  for (const t of B.towers) {
+    t.skc = t.skc || {};
+    for (const m of t.e.mv) { const s = S[m]; if (!s || !s.act) continue; if (!wave) continue; t.skc[m] = (t.skc[m] == null ? 1 + rnd() : t.skc[m]) - dt; if (t.skc[m] <= 0) t.skc[m] = s.act(t, m) ? s.cd : 0.5; }
+    if (!wave) continue;
+    const adj = [hasM(t, 'Splash') && 'sp', hasM(t, 'Silk Trap') && 'silk', hasM(t, 'Baneful Bunker') && 'bb', hasM(t, 'Burning Bulwark') && 'bw'].filter(Boolean);
+    if (adj.length) for (const e of B.en) if (visible(e) && Math.hypot(e.x - t.x, e.y - t.y) < 38) {
+      if (adj.includes('sp')) slowE(e, 'splash', 0.9, 1); if (adj.includes('silk')) slowE(e, 'silk', 0.7, 2);
+      if (adj.includes('bb') && !e.sts && rnd() < 0.5 * dt) inflict(e, 'poison', t); if (adj.includes('bw') && !e.sts && rnd() < 0.5 * dt) inflict(e, 'burn', t);
+    }
+  }
+  if (B.traps) for (const tr of B.traps) for (const e of B.en) if (visible(e) && !e.air && e.r === tr.r && Math.abs(e.d - tr.d) < 10 && !tr.hit.has(e)) {
+    tr.hit.add(e);
+    if (tr.kind === 'rock') hurt(tr.t, e, Math.max(1, Math.floor(e.max * 0.125 * eff(5, enTypes(e)))));
+    else if (tr.kind === 'spikes') hurt(tr.t, e, Math.max(1, Math.floor(e.max * 0.08)));
+    else if (tr.kind === 'toxic') inflict(e, 'poison', tr.t);
+    else if (tr.kind === 'web') slowE(e, 'web', 0.6, 3);
+  }
+  if (B.traps) B.traps = B.traps.filter(tr => B.towers.includes(tr.t));
+  if (B.decoys) B.decoys = B.decoys.filter(dc => B.towers.includes(dc.t) && !(dc.u && dc.u < B.time));
+  B.terr && Object.keys(B.terr).forEach(k => { if (B.terr[k] < B.time) delete B.terr[k]; });
+  if (B.mwx && B.mwx.until < B.time) { B.mwx = null; syncWeather(); }
+}
+function decoyBlocks(e) { if (!B.decoys || e.air || e.boss) return false; for (const dc of B.decoys) if (dc.r === e.r && e.d < dc.d && dc.d - e.d < 8) { if (!dc.u) dc.u = B.time + 2; return true; } return false; }
+function drawSkills(g) {   // traps and decoys, drawn with each move's own effect graphics
+  for (const tr of B.traps || []) { const f = DB.fx.moves[tr.m], a = f && DB.fx.anims[f.h || f.u]; if (a) { g.save(); g.globalAlpha = 0.85; drawFxAnim(g, a, B.time % 1.2, 0, tr.x, tr.y, 0); g.restore(); } }
+  for (const dc of B.decoys || []) { const f = DB.fx.moves[dc.m], a = f && DB.fx.anims[f.u || f.h]; if (a) drawFxAnim(g, a, B.time % 1, 0, dc.x, dc.y - 6, 0); }
+}
+function bufOf(t, k) { let v = t.buf[k]; for (const o of B.towers) if (o !== t && o.buft > 0 && hasM(o, 'Baton Pass') && Math.hypot(o.x - t.x, o.y - t.y) <= 90) v = Math.max(v, o.buf[k]); return v; }
+function transformSrc(t) { if (!hasM(t, 'Transform')) return null; const o = B.towers.filter(x => x !== t && !hasM(x, 'Transform')).sort((a, b) => b.e.lv - a.e.lv)[0]; return o || null; }
