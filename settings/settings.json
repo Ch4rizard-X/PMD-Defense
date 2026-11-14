@@ -1,0 +1,56 @@
+{
+  "version": 1,
+  "waveBase": 40,
+  "waveStep": 1,
+  "groupAdd": [
+    0,
+    4,
+    13,
+    27
+  ],
+  "groupPay": [
+    1.0,
+    1.1,
+    1.2,
+    1.35
+  ],
+  "groupCount": [
+    1.0,
+    1.05,
+    1.1,
+    1.15
+  ],
+  "groupGate": [
+    0,
+    5,
+    10,
+    15
+  ],
+  "threatStep": 0.488095,
+  "lvPerThreat": 4.2,
+  "lvSpread": 3.0,
+  "lvSpreadPerThreat": 0.3,
+  "xpMul": 0.4,
+  "xpFullGap": 5.0,
+  "xpZeroGap": 15.0,
+  "upgStep": 0.08,
+  "upgMax": 5,
+  "upgCost": [
+    0.8,
+    1.2,
+    1.8,
+    2.6,
+    3.6
+  ],
+  "rarity": [
+    1.0,
+    0.6,
+    0.35,
+    0.15
+  ],
+  "weatherWaves": 3,
+  "startCash": 220,
+  "startCashPerThreat": 60,
+  "winPay": 100,
+  "winPayPerThreat": 80
+}

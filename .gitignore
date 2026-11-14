@@ -1,0 +1,16 @@
+# ROM-extracted assets (sprites, music, tilesets, effects) never go in this public repo
+*.png
+*.mp3
+*.ogg
+*.wav
+*.gba
+*.nds
+unity/Assets/RouteDefense/Resources/
+unity/Library/
+unity/Temp/
+unity/Logs/
+unity/Builds/
+html/img/
+html/snd/
+html/data/
+dist/
