@@ -134,6 +134,7 @@ function bossAct(e, dt) {
 }
 // Flying types whose only movement animation is a ground walk (no flight frames in SpriteCollab): they walk the path
 const GROUND_FLYERS = new Set([6, 149, 123, 163, 178, 188, 83, 84, 85, 225, 566, 629, 701, 722, 723, 741, 845]);
+const HOVER_SPEED = 0.65;   // flying animations play at 65% speed
 function routeOf(e) { const r = B.M.routes[Math.min(e.r, B.M.routes.length - 1)]; return e.air ? r.air : r; }
 const SEE_MOVES = new Set([193, 316, 357]);
 function seesWhy(e) {   // why a Pokémon can see hidden Ghost types (null if it can't)
@@ -566,8 +567,9 @@ function drawBattle(g) {
     g.globalAlpha = al; marker(g, false, e.id, e.x, e.y, ESPR * (e.boss ? 1.3 : 1)); g.globalAlpha = 1;
     const A = DB.anim[e.id], walk = e.air && A && A.Hover ? 'Hover' : 'Walk';   // flyers use their Hover animation when the sheet has one (FlapAround turns in a full circle, so it isn't used)
     const an = e.hp <= 0 || e.hurt > 0 ? 'Hurt' : e.stop > 0 && e.sts ? 'Idle' : walk;
-    drawMon(g, e.id, an, e.at, e.dir, e.x, e.y - lift, al, undefined, ESPR);
-    if (e.hurt > 0.12 && e.hp > 0) flashMon(g, e.id, an, e.at, e.dir, e.x, e.y - lift, ESPR, (e.hurt - 0.12) * 5);   // white hit flash
+    const at = an === 'Hover' ? e.at * HOVER_SPEED : e.at;   // flight loops are short: played a bit slower so flapping isn't frantic
+    drawMon(g, e.id, an, at, e.dir, e.x, e.y - lift, al, undefined, ESPR);
+    if (e.hurt > 0.12 && e.hp > 0) flashMon(g, e.id, an, at, e.dir, e.x, e.y - lift, ESPR, (e.hurt - 0.12) * 5);   // white hit flash
     if (e.hp <= 0) koBurst(g, e.x, e.y - 10 * ESPR, 1 - clamp(e.dead / 0.5, 0, 1), e.boss);
     if (e.hp > 0 && (e.under || (e.hide && !(e.rev > 0)))) return;
     if (e.hp > 0 && e.sh > 0) { g.beginPath(); g.arc(e.x, e.y - 10 * ESPR - lift, (e.boss ? 22 : 15) * ESPR, 0, 7); g.fillStyle = 'rgba(120,220,120,.18)'; g.fill(); g.strokeStyle = 'rgba(160,255,160,.75)'; g.lineWidth = 1.5; g.stroke(); g.lineWidth = 1; }

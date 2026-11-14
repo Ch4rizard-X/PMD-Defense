@@ -101,7 +101,7 @@ namespace RouteDefense
                 float lift = (e.air ? 12 + Mathf.Sin(B.time * 3 + e.ph) * 2.5f : 0) * Battle.ESPR;
                 var A = DB.Anim[e.id]; string walk = e.air && A.ContainsKey("Hover") ? "Hover" : "Walk";
                 string an = e.hp <= 0 || e.hurt > 0 ? "Hurt" : e.stop > 0 && e.sts != null ? "Idle" : walk;
-                var meta = Gfx.Meta(e.id, an); int f = meta == null ? 0 : Gfx.FrameAt(meta.d, meta.Total, e.at, true);
+                var meta = Gfx.Meta(e.id, an); int f = meta == null ? 0 : Gfx.FrameAt(meta.d, meta.Total, an == "Hover" ? e.at * 0.65f : e.at, true);   // flight loops play at 65% speed so flapping isn't frantic
                 v.sr.sprite = Gfx.MonFrame(e.id, an, f, e.dir); v.sr.color = new Color(1, 1, 1, al);
                 v.go.transform.position = W(e.x, e.y); v.sr.transform.localPosition = new Vector3(0, lift, 0); v.sr.transform.localScale = Vector3.one * Battle.ESPR; v.sr.sortingOrder = (int)e.y * 2 + 1;
                 v.sh.sprite = Gfx.Marker(false, e.id); v.sh.color = new Color(1, 1, 1, al); v.sh.transform.localScale = Vector3.one * Battle.ESPR * (e.boss ? 1.3f : 1); v.sel.enabled = false;
