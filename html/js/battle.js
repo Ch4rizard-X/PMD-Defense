@@ -340,7 +340,7 @@ function applyMove(t, m, e, st) {
       if (e.sts === 'freeze' && M.t === 9) { e.sts = null; e.stop = 0; }
     }
     if (ek === 'sturdy' && !e.sturdy && e.hp >= e.max && dmg >= e.hp) { dmg = e.hp - 1; e.sturdy = 1; }
-    e.fs = m === 206; hurt(t, e, dmg); e.fs = false; quirkHit(t, e, dmg);   // False Swipe: a knockout by it is 3x as likely to ask to join
+    e.fs = m === 206; B.mlab = M.n; hurt(t, e, dmg); e.fs = false; quirkHit(t, e, dmg);   // False Swipe: a knockout by it is 3x as likely to ask to join
     if (e.hp > 0 && M.ai !== 'none' && AILMENTS.includes(M.ai) && chance(M.ac || 0)) inflict(e, M.ai, t);
     if (e.hp > 0 && (M.fl && chance(M.fl) || (!M.fl && (hk === 'kings-rock' || hk === 'razor-fang') && rnd() < 0.1))) e.stop = Math.max(e.stop, 0.35);
     if (e.hp > 0 && M.sc.length && M.tg !== 7 && chance(M.sch || 0)) debuff(e, M.sc, t);
@@ -367,32 +367,33 @@ function inflict(e, ai, t) {
   if (ai === 'freeze' && B.weather && B.weather.k === 'sun') return;   // nothing freezes in sun
   e.sts = ai; e.stt = D[ai] * k * (1 + mod('statusDur'));
   if (ai === 'sleep' || ai === 'freeze' || ai === 'trap') e.stop = Math.max(e.stop, e.stt);
+  if (t && (ai === 'sleep' || ai === 'freeze' || ai === 'trap' || ai === 'paralysis' || ai === 'confusion')) meterCtl(t, e.stt);
 }
 /* on-hit type quirks */
 function quirkHit(t, e, dmg) {
   if (hasT(t, 12) && !B.chain) {                                                            // Electric: Chain
     const o = B.en.filter(x => x !== e && x.hp > 0 && x.d > 0 && !x.under && !(x.hide && !(x.rev > 0)) && Math.hypot(x.x - e.x, x.y - e.y) < 70)
       .sort((a, b) => Math.hypot(a.x - e.x, a.y - e.y) - Math.hypot(b.x - e.x, b.y - e.y))[0];
-    if (o) { B.chain = 1; B.zap = (B.zap || []).concat([{ a: [e.x, e.y], b: [o.x, o.y], t: 0.18 }]); hurt(t, o, Math.max(1, Math.floor(dmg * 0.3))); B.chain = 0; }
+    if (o) { B.chain = 1; B.zap = (B.zap || []).concat([{ a: [e.x, e.y], b: [o.x, o.y], t: 0.18 }]); const L = B.mlab; B.mlab = 'Chain (Electric quirk)'; hurt(t, o, Math.max(1, Math.floor(dmg * 0.3))); B.mlab = L; B.chain = 0; }
   }
   if (e.hp <= 0) return;
   if (hasT(t, 9) && rnd() < 0.15) inflict(e, 'burn', t);                                    // Fire: Scorch
   if (hasT(t, 3)) { e.pst = Math.min(5, (e.pst || 0) + 1); e.ptt = 4; e.psrc = t; }          // Poison: Toxic
-  if (hasT(t, 10)) e.wsl = 1.5;                                                             // Water: Soak
-  if (hasT(t, 14)) e.chill = 2;                                                             // Ice: Chill
-  if (hasT(t, 4) && rnd() < 0.08) e.stop = Math.max(e.stop, e.boss ? 0.2 : 0.4);            // Ground: Tremor
-  if (hasT(t, 16) && !e.boss && e.hp > 0 && e.hp < e.max * 0.15) { floater(e, 'Finish', 4); hurt(t, e, e.hp); }   // Dark: Finisher
+  if (hasT(t, 10)) { e.wsl = 1.5; meterCtl(t, 0.15); }                                                             // Water: Soak
+  if (hasT(t, 14)) { e.chill = 2; meterCtl(t, 0.3); }                                                             // Ice: Chill
+  if (hasT(t, 4) && rnd() < 0.08) { e.stop = Math.max(e.stop, e.boss ? 0.2 : 0.4); meterCtl(t, e.boss ? 0.2 : 0.4); }            // Ground: Tremor
+  if (hasT(t, 16) && !e.boss && e.hp > 0 && e.hp < e.max * 0.15) { floater(e, 'Finish', 4); const L = B.mlab; B.mlab = 'Finisher (Dark quirk)'; hurt(t, e, e.hp); B.mlab = L; }   // Dark: Finisher
 }
 function hurt(t, e, dmg) {
   const phase = t && hasT(t, 7);   // Ghost: Phase - attacks go through Protect shields
   if (!phase && !(e.nt > B.time) && e.prot && e.sh <= 0 && e.shcd <= 0 && e.hp - dmg > 0) { e.shm = e.sh = Math.ceil(e.max * 0.25); e.sht = 3; e.shcd = 9; floater(e, mv(e.prot).n, 4); }
   if (!phase && e.sh > 0) { const a = Math.min(e.sh, dmg); e.sh -= a; dmg -= a; if (e.sh <= 0) e.sht = 0; if (dmg <= 0) { e.hurt = 0.1; return; } }
-  e.hp -= dmg;
+  meterDmg(t, Math.min(dmg, Math.max(0, e.hp)), B.mlab || 'Other'); e.hp -= dmg;
   if (e.heal && !e.healed && !(e.nt > B.time) && e.hp > 0 && e.hp < e.max * 0.4) { e.healed = 1; e.hp = Math.min(e.max, e.hp + Math.ceil(e.max * e.heal.hl)); floater(e, mv(e.heal.m).n, 4); } e.hurt = 0.25; floater(e, String(dmg), 0);
   if (e.hp <= 0) ko(t, e);
 }
 function ko(t, e) {
-  e.hp = 0; e.dead = 0.5; B.kills++;
+  e.hp = 0; e.dead = 0.5; B.kills++; { const m = mtr(t); if (m) m.ko++; }
   B.cash += Math.round((2 + Math.floor(e.lv / 6) + (e.boss ? 50 : 0)) * (t && heldKey(t.e) === 'amulet-coin' ? 2 : 1) * (1 + mod('koCash')));
   if (t) {
     const sp = SP[e.id];
@@ -451,10 +452,10 @@ function tick(dt) {
       if (!safe) { e.wdot = (e.wdot || 0) + e.max * 0.02 * (1 + mod('weatherChip')) * dt * (e.boss ? 0.4 : 1); if (e.wdot >= 1) { const d = Math.floor(e.wdot); e.wdot -= d; e.hp -= d; if (e.hp <= 0) { ko(null, e); continue; } } }
     }
     if (e.akOff && B.time > e.akOff) { e.ak = e.ak0; e.akOff = 0; }
-    if (e.cu && e.cu.left > 0) { const d0 = Math.min(e.cu.left, e.cu.dps * dt); e.cu.left -= d0; e.cud = (e.cud || 0) + d0; if (e.cud >= 1) { const d = Math.floor(e.cud); e.cud -= d; e.hp -= d; if (e.hp <= 0) { ko(B.towers.includes(e.cu.t) ? e.cu.t : null, e); continue; } } }
-    if (e.pm && B.time >= e.pm) { e.pm = 0; floater(e, 'Perish', 4); hurt(B.towers.includes(e.pmT) ? e.pmT : null, e, Math.ceil(e.max * 0.3)); if (e.hp <= 0) continue; }
+    if (e.cu && e.cu.left > 0) { const d0 = Math.min(e.cu.left, e.cu.dps * dt); e.cu.left -= d0; e.cud = (e.cud || 0) + d0; if (e.cud >= 1) { const d = Math.floor(e.cud); e.cud -= d; meterDmg(B.towers.includes(e.cu.t) ? e.cu.t : null, Math.min(d, e.hp), 'Curse', true); e.hp -= d; if (e.hp <= 0) { ko(B.towers.includes(e.cu.t) ? e.cu.t : null, e); continue; } } }
+    if (e.pm && B.time >= e.pm) { e.pm = 0; floater(e, 'Perish', 4); B.mlab = 'Perish Song'; hurt(B.towers.includes(e.pmT) ? e.pmT : null, e, Math.ceil(e.max * 0.3)); if (e.hp <= 0) continue; }
     e.hurt = Math.max(0, e.hurt - dt); e.imm -= dt; e.chill = (e.chill || 0) - dt; e.wsl = (e.wsl || 0) - dt;
-    if (e.pst > 0) { e.ptt -= dt; if (e.ptt <= 0) e.pst = 0; else if (e.ak !== 'magic-guard') { e.pd = (e.pd || 0) + e.max * 0.01 * e.pst * dt * (e.boss ? 0.4 : 1); if (e.pd >= 1) { const d = Math.floor(e.pd); e.pd -= d; e.hp -= d; if (e.hp <= 0) { ko(B.towers.includes(e.psrc) ? e.psrc : null, e); continue; } } } }
+    if (e.pst > 0) { e.ptt -= dt; if (e.ptt <= 0) e.pst = 0; else if (e.ak !== 'magic-guard') { e.pd = (e.pd || 0) + e.max * 0.01 * e.pst * dt * (e.boss ? 0.4 : 1); if (e.pd >= 1) { const d = Math.floor(e.pd); e.pd -= d; meterDmg(B.towers.includes(e.psrc) ? e.psrc : null, Math.min(d, e.hp), 'Toxic stacks (Poison quirk)', true); e.hp -= d; if (e.hp <= 0) { ko(B.towers.includes(e.psrc) ? e.psrc : null, e); continue; } } } }
     if (e.sht > 0) { e.sht -= dt; if (e.sht <= 0) e.sh = 0; } e.shcd -= dt;
     if (e.regen) { e.rg = (e.rg || 0) + e.max * 0.01 * dt; if (e.rg >= 1) { const h = Math.floor(e.rg); e.rg -= h; e.hp = Math.min(e.max, e.hp + h); } }
     if (e.dashMv) { if (e.dash > 0) e.dash -= dt; else if (e.d > 0 && !e.stop && !e.sts && !(e.nt > B.time) && (e.dt2 -= dt) <= 0) { e.dash = 0.6; e.dt2 = 4 + rnd() * 2; } }
@@ -464,7 +465,7 @@ function tick(dt) {
     if (e.sts) {
       e.stt -= dt;
       const dps = { burn: 0.04, poison: 0.05, trap: 0.03, 'leech-seed': 0.03 }[e.sts] * (1 + mod('dot'));
-      if (dps && e.ak !== 'magic-guard') { e.dot = (e.dot || 0) + e.max * dps * dt * (e.boss ? 0.4 : 1) * (e.bind && e.sts === 'trap' ? 2 : 1); if (e.dot >= 1) { const d = Math.floor(e.dot); e.dot -= d; e.hp -= d; if (e.hp <= 0) { ko(e.src && B.towers.includes(e.src) ? e.src : null, e); continue; } } }
+      if (dps && e.ak !== 'magic-guard') { e.dot = (e.dot || 0) + e.max * dps * dt * (e.boss ? 0.4 : 1) * (e.bind && e.sts === 'trap' ? 2 : 1); if (e.dot >= 1) { const d = Math.floor(e.dot); e.dot -= d; meterDmg(B.towers.includes(e.src) ? e.src : null, Math.min(d, e.hp), { burn: 'Burn', poison: 'Poison', trap: 'Trap (bind)', 'leech-seed': 'Leech Seed' }[e.sts] || 'Status', true); e.hp -= d; if (e.hp <= 0) { ko(e.src && B.towers.includes(e.src) ? e.src : null, e); continue; } } }
       if (e.stt <= 0) { if (e.sts === 'yawn') { e.sts = null; inflict(e, 'sleep'); } else { if (e.sts === 'sleep') e.imm = 4; e.sts = null; } }
     }
     if (e.stop > 0) { e.stop -= dt; } else {
@@ -715,8 +716,8 @@ function skR(t) { return RANGE[3] * (1 + Math.min(0.25, t.e.lv / 400) + mod('ran
 const visible = e => e.hp > 0 && e.d > 0 && !e.under && !(e.hide && !(e.rev > 0));
 const skIn = (t, r) => B.en.filter(e => visible(e) && Math.hypot(e.x - t.x, e.y - t.y) <= (r || skR(t)));
 const skT = t => { const l = skIn(t); return l.length ? chooseTarget(t, l) : null; };
-const stopE = (e, s) => { e.stop = Math.max(e.stop, e.boss ? s / 2 : s); };
-const slowE = (e, k, f, d) => { (e.sl || (e.sl = {}))[k] = [f, B.time + d]; };
+const stopE = (e, s) => { e.stop = Math.max(e.stop, e.boss ? s / 2 : s); meterCtl(B.msrc, e.boss ? s / 2 : s); };
+const slowE = (e, k, f, d) => { (e.sl || (e.sl = {}))[k] = [f, B.time + d]; meterCtl(B.msrc, d * (1 - f) * 2); };   // meter: slow seconds weighted by strength
 function skSpeed(e) { let v = 1; if (e.sl) for (const k in e.sl) { const [f, u] = e.sl[k]; if (u > B.time) v *= f; else delete e.sl[k]; } if (e.tr && e.tr[1] > B.time) v *= e.tr[0]; return v; }
 function enTypes(e) { const o = e.tyo; if (!o || o.u <= B.time) return SP[e.id].t; return o.add ? [...new Set(SP[e.id].t.concat(o.t))].slice(0, 3) : o.t; }
 function skFx(m, x, y, dir) { const f = DB.fx.moves[m]; if (f) { const r = f.h || f.u; if (r) addFx(r, x, y - 8 * ESPR, dir || 0); } }
@@ -844,20 +845,21 @@ function skillTick(dt) {
   const S = skills(), wave = B.phase === 'wave';
   for (const t of B.towers) {
     t.skc = t.skc || {};
-    for (const m of t.e.mv) { const s = S[m]; if (!s || !s.act) continue; if (!wave) continue; t.skc[m] = (t.skc[m] == null ? 1 + rnd() : t.skc[m]) - dt; if (t.skc[m] <= 0) t.skc[m] = s.act(t, m) ? s.cd : 0.5; }
+    for (const m of t.e.mv) { const s = S[m]; if (!s || !s.act) continue; if (!wave) continue; t.skc[m] = (t.skc[m] == null ? 1 + rnd() : t.skc[m]) - dt; if (t.skc[m] <= 0) { B.msrc = t; B.mlab = s.n; t.skc[m] = s.act(t, m) ? s.cd : 0.5; B.msrc = null; } }
     if (!wave) continue;
     const adj = [hasM(t, 'Splash') && 'sp', hasM(t, 'Silk Trap') && 'silk', hasM(t, 'Baneful Bunker') && 'bb', hasM(t, 'Burning Bulwark') && 'bw'].filter(Boolean);
     if (adj.length) for (const e of B.en) if (visible(e) && Math.hypot(e.x - t.x, e.y - t.y) < 38) {
-      if (adj.includes('sp')) slowE(e, 'splash', 0.9, 1); if (adj.includes('silk')) slowE(e, 'silk', 0.7, 2);
+      if (adj.includes('sp')) slowE(e, 'splash', 0.9, 1); if (adj.includes('silk')) slowE(e, 'silk', 0.7, 2); meterCtl(t, dt * (adj.includes('silk') ? 0.6 : 0.2));
       if (adj.includes('bb') && !e.sts && rnd() < 0.5 * dt) inflict(e, 'poison', t); if (adj.includes('bw') && !e.sts && rnd() < 0.5 * dt) inflict(e, 'burn', t);
     }
   }
   if (B.traps) for (const tr of B.traps) for (const e of B.en) if (visible(e) && !e.air && e.r === tr.r && Math.abs(e.d - tr.d) < 10 && !tr.hit.has(e)) {
-    tr.hit.add(e);
+    tr.hit.add(e); B.msrc = tr.t; B.mlab = mv(tr.m).n;
     if (tr.kind === 'rock') hurt(tr.t, e, Math.max(1, Math.floor(e.max * 0.125 * eff(5, enTypes(e)))));
     else if (tr.kind === 'spikes') hurt(tr.t, e, Math.max(1, Math.floor(e.max * 0.08)));
     else if (tr.kind === 'toxic') inflict(e, 'poison', tr.t);
     else if (tr.kind === 'web') slowE(e, 'web', 0.6, 3);
+    B.msrc = null;
   }
   if (B.traps) B.traps = B.traps.filter(tr => B.towers.includes(tr.t));
   if (B.decoys) B.decoys = B.decoys.filter(dc => B.towers.includes(dc.t) && !(dc.u && dc.u < B.time));
@@ -871,3 +873,8 @@ function drawSkills(g) {   // traps and decoys, drawn with each move's own effec
 }
 function bufOf(t, k) { let v = t.buf[k]; for (const o of B.towers) if (o !== t && o.buft > 0 && hasM(o, 'Baton Pass') && Math.hypot(o.x - t.x, o.y - t.y) <= 90) v = Math.max(v, o.buf[k]); return v; }
 function transformSrc(t) { if (!hasM(t, 'Transform')) return null; const o = B.towers.filter(x => x !== t && !hasM(x, 'Transform')).sort((a, b) => b.e.lv - a.e.lv)[0]; return o || null; }
+
+/* ---------- damage meter: what each of your Pokémon did this battle (HP actually lost, no overkill, shields don't count) ---------- */
+function mtr(t) { if (!t || !t.e || !B) return null; const M = B.meter || (B.meter = {}); return M[t.e.u] || (M[t.e.u] = { u: t.e.u, id: t.e.id, dmg: 0, ko: 0, dot: 0, ctl: 0, br: {} }); }
+function meterDmg(t, amt, label, dot) { const m = mtr(t); if (!m || !(amt > 0)) return; m.id = t.e.id; m.dmg += amt; m.br[label] = (m.br[label] || 0) + amt; if (dot) m.dot += amt; }
+function meterCtl(t, sec) { const m = mtr(t); if (m && sec > 0) m.ctl += sec; }

@@ -497,6 +497,38 @@ function sketchPanel(e, slot, back) {
     r.onclick = () => { e.mv[slot] = m; save(); toast(`${SP[e.id].n} sketched ${mv(m).n}!`); back(); }; wrap.appendChild(r); } };
   f.oninput = draw; draw();
 }
+/* ---------- damage meter (Details!-style): Damage / Knockouts / Effects, tap a row for its move breakdown ---------- */
+const MET = { tab: 'dmg', open: null };
+function meterRows(tab) {
+  const rows = Object.values((B && B.meter) || {}).map(m => Object.assign({}, m, { e: G.box.find(x => x.u === m.u) })).filter(r => r.e);
+  const tot = { dmg: rows.reduce((a, r) => a + r.dmg, 0), ko: rows.reduce((a, r) => a + r.ko, 0), dot: rows.reduce((a, r) => a + r.dot, 0), ctl: rows.reduce((a, r) => a + r.ctl, 0) };
+  const val = r => tab === 'dmg' ? r.dmg : tab === 'ko' ? r.ko : (tot.ctl ? r.ctl / tot.ctl : 0) + (tot.dot ? r.dot / tot.dot : 0);
+  rows.sort((a, b) => val(b) - val(a)); return { rows, tot, val };
+}
+function meterHTML(box, tab, full) {
+  const { rows, tot, val } = meterRows(tab), max = rows.length ? val(rows[0]) || 1 : 1, secs = Math.max(1, B.mtime || B.time || 1);
+  box.innerHTML = '';
+  const tabs = el('div', 'mtabs'); for (const [k, n] of [['dmg', 'Damage'], ['ko', 'Knockouts'], ['fx', 'Effects']]) { const b = el('button', 'sm' + (k === tab ? '' : ' alt'), n); b.onclick = ev => { ev.stopPropagation(); MET.tab = k; MET.open = null; meterHTML(box, k, full); }; tabs.appendChild(b); }
+  box.appendChild(tabs);
+  if (!rows.length) { box.appendChild(el('div', 'hint', 'Nothing yet - place a Pokémon and start a wave.')); return; }
+  rows.forEach((r, i) => {
+    const pct = tab === 'dmg' ? Math.round(r.dmg / Math.max(1, tot.dmg) * 100) : tab === 'ko' ? Math.round(r.ko / Math.max(1, tot.ko) * 100) : 0;
+    const txt = tab === 'dmg' ? `<b>${r.dmg.toLocaleString()}</b> ${Math.round(r.dmg / secs)}/s ${pct}%` : tab === 'ko' ? `<b>${r.ko}</b> ${pct}%` : `<b>${Math.round(r.ctl)} s</b> control ${r.dot ? '- ' + r.dot.toLocaleString() + ' over time' : ''}`;
+    const row = el('div', 'mrow'); const c = TCOL[SP[r.e.id].t[0]];
+    row.innerHTML = `<i class="mbar" style="width:${Math.max(2, val(r) / max * 100)}%;background:${c}"></i>`;
+    row.appendChild(trimIcon(r.e.id, 22)); row.appendChild(el('span', 'mnm', `${i + 1}. ${SP[r.e.id].n}${full && i === 0 && tab === 'dmg' ? ' <span class="mvp">MVP</span>' : ''}`)); row.appendChild(el('span', 'mv2', txt));
+    row.onclick = ev => { ev.stopPropagation(); MET.open = MET.open === r.u ? null : r.u; meterHTML(box, tab, full); };
+    box.appendChild(row);
+    if (MET.open === r.u) { const bd = el('div', 'mbd'); const br = Object.entries(r.br).sort((a, b) => b[1] - a[1]);
+      bd.innerHTML = (br.length ? br.map(([k, v]) => `<div><span>${k}</span><span>${v.toLocaleString()} (${Math.round(v / Math.max(1, r.dmg) * 100)}%)</span></div>`).join('') : '') + `<div><span>Control</span><span>${Math.round(r.ctl)} s</span></div><div><span>Knockouts</span><span>${r.ko}</span></div>`; box.appendChild(bd); }
+  });
+  box.appendChild(el('div', 'hint', tab === 'dmg' ? `Team: ${tot.dmg.toLocaleString()} damage` : tab === 'ko' ? `Team: ${tot.ko} knockouts` : 'Control = seconds enemies spent stopped or slowed (stronger slows count more)'));
+}
+function meterShow() {
+  let m = $('#meter'); if (!m) { m = el('div', ''); m.id = 'meter'; $('#battle').appendChild(m); }
+  m.style.display = G.opts.meter ? 'block' : 'none'; const b = $('#bmt'); if (b) b.classList.toggle('alt', !G.opts.meter);
+  clearInterval(UI.mtimer); if (G.opts.meter) { const draw = () => { if (B && $('#meter') && UI.screen === 'battle') meterHTML($('#meter'), MET.tab, false); }; draw(); UI.mtimer = setInterval(draw, 500); }
+}
 /* ---------- team (max 10) ---------- */
 function showTeam() {
   show('team'); const t = $('#team'); artBg(t, 2);
@@ -532,8 +564,10 @@ function beginBattle() {
 function buildHud() {
   const h = $('#hud'); h.innerHTML = '';
   h.innerHTML = `<div class="hb"><span class="st"><i>♥</i><b id="hl"></b></span><span class="st"><i>$</i><b id="hc"></b></span><span class="st"><i>⚑</i><b id="hw"></b></span>
-    <button id="bgo" class="sm">GO ▶</button><button id="bsp" class="sm alt">1×</button><button id="bau" class="sm alt">Auto: off</button><button id="bwx" class="sm alt">Weather</button><button id="bmn" class="sm alt">☰</button><div class="wprog"><i id="wpi"></i></div></div><div id="bossbar"><div class="bn"></div><div class="bb"><i class="bt"></i><i class="bf"></i></div></div>`;
+    <button id="bgo" class="sm">GO ▶</button><button id="bsp" class="sm alt">1×</button><button id="bau" class="sm alt">Auto: off</button><button id="bwx" class="sm alt">Weather</button><button id="bmt" class="sm alt">Meter</button><button id="bmn" class="sm alt">☰</button><div class="wprog"><i id="wpi"></i></div></div><div id="bossbar"><div class="bn"></div><div class="bb"><i class="bt"></i><i class="bf"></i></div></div>`;
   $('#bgo').onclick = () => { sfx('tap'); startWave(); };
+  $('#bmt').onclick = () => { sfx('tap'); G.opts.meter = !G.opts.meter; save(); meterShow(); };
+  meterShow();
   $('#bsp').onclick = () => { B.speed = B.speed === 1 ? 2 : B.speed === 2 ? 3 : 1; $('#bsp').textContent = B.speed + '×'; };
   $('#bau').onclick = () => { B.auto = !B.auto; $('#bau').textContent = 'Auto: ' + (B.auto ? 'on' : 'off'); if (B.auto) startWave(); };
   $('#bmn').onclick = () => pauseMenu();
@@ -609,6 +643,7 @@ function askJoin() {
   box.append(y, n);
 }
 function refreshHud() {
+  queueMicrotask(fitHudIfWider);
   if (!B) return;
   if (UI.lastLives != null && B.lives < UI.lastLives) { const st = $('#hl').parentNode; st.classList.remove('hit'); void st.offsetWidth; st.classList.add('hit'); }
   UI.lastLives = B.lives;
@@ -666,6 +701,8 @@ function towerInfo() {
 function hudInset() { const h = document.querySelector('#hud .hb'), st = $('#stage'); if (!h || !st) return 0; return Math.max(0, h.getBoundingClientRect().bottom - st.getBoundingClientRect().top + 4); }
 function teamInset() { const t = $('#teambar'); return t && t.children.length ? t.getBoundingClientRect().height + 10 : 0; }
 function playAspect() { fitHud(); const w = innerWidth, h = Math.max(1, innerHeight - hudInset() - teamInset()); return Math.max(w, h) / Math.max(1, Math.min(w, h)); }
+/* re-fit only when the bar's contents outgrow (or no longer need) the current shrink */
+let HUDW = 0; function fitHudIfWider() { const h = document.querySelector('#hud .hb'); if (!h) return; const w = h.scrollWidth; if (Math.abs(w - HUDW) > 2) { HUDW = w; fitHud(); } }
 /* the top bar is one row: if it is wider than the screen it shrinks to fit */
 function fitHud() {
   const h = document.querySelector('#hud .hb'); if (!h) return; h.style.zoom = '';
@@ -693,6 +730,7 @@ function layout() {
     const tb = $('#teambar'), y = (top + Math.min(mh * s0, ah)) / dpr + 4;
     if (tb) { tb.style.top = y + 'px'; tb.style.bottom = 'auto'; }
     const ti = $('#tinfo'); if (ti && tb) ti.style.bottom = (innerHeight - y + 6) + 'px';
+    const me = $('#meter'); if (me) { me.style.top = (top / dpr + 4) + 'px'; me.style.maxHeight = Math.max(120, y - top / dpr - 12) + 'px'; }
   }
   UI.zc = [(CV.width / 2 - VIEW.ox) / s, (my - VIEW.oy) / s];
 }
@@ -781,6 +819,7 @@ function showResult() {
   if (B.recruits.length) { box.appendChild(el('h4', '', 'Joined your team')); const g = el('div', 'grid'); B.recruits.forEach(e => g.appendChild(monCard(e))); box.appendChild(g); }
   const xs = el('div', 'grid'); for (const e of B.team) { const c = monCard(e); c.appendChild(el('div', 'hint', '+' + (B.xpLog[e.u] || 0) + ' XP')); xs.appendChild(c); }
   box.appendChild(el('h4', '', 'Team')); box.appendChild(xs);
+  if (B.meter) { clearInterval(UI.mtimer); B.mtime = B.time; box.appendChild(el('h4', '', 'Damage meter')); const mb = el('div', 'mres'); box.appendChild(mb); MET.open = null; meterHTML(mb, 'dmg', true); }
   const again = el('button', '', 'Same route, new layout'); again.onclick = () => { closePanel(); UI.route.seed = (Math.random() * 1e9) | 0; beginBattle(); };
   const hub = el('button', 'alt', 'Back to routes'); hub.onclick = () => { closePanel(); B = null; showHub('routes'); };
   box.append(again, hub);
