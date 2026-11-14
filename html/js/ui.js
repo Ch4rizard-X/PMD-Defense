@@ -70,7 +70,29 @@ function showTitle() {
   b.onclick = () => { sfx('tap'); G.box.length ? showHub() : showStarter(); };
   t.querySelector('.tstack').appendChild(b);
   if (G.box.length) t.querySelector('.tstack').appendChild(el('div', 'tinfo2', `${DB.ts.filter((_, i) => mapOpen(i)).length} maps open - best tier ${bestTier()} - ${G.box.length} Pokémon - Pokédex ${Object.keys(G.own).length}`));
-  fitTitle(); titleWalkers(t); titleMotes(t);
+  fitTitle(); titleWalkers(t); titleMotes(t); checkUpdate(t);
+}
+/* online code updates (Android app / bundled file): GitHub holds the newest code; the graphics stay in the app */
+const UPD = 'https://raw.githubusercontent.com/Ch4rizard-X/pmd-defense/main/html/';
+async function checkUpdate(t) {
+  if (!window.__BUNDLE) return;
+  const st = t.querySelector('.tstack'), ver = el('div', 'tver', 'v' + window.__CODEV_RUN); st.appendChild(ver);
+  try {
+    const r = await (await fetch(UPD + 'version.json?t=' + Date.now(), { cache: 'no-store' })).json();
+    if (!(r.v > window.__CODEV_RUN) || !t.isConnected) return;
+    if (r.data !== window.__DATAH) { ver.textContent = 'v' + window.__CODEV_RUN + ' - v' + r.v + ' is out but needs a new app download'; return; }
+    const b = el('button', 'upd', 'Update available (v' + r.v + ')'); st.insertBefore(b, ver);
+    b.onclick = async () => {
+      b.disabled = true; b.textContent = 'Downloading...';
+      try {
+        const get = async f => { const x = await fetch(UPD + f + '?t=' + Date.now(), { cache: 'no-store' }); if (!x.ok) throw new Error(f); return x.text(); };
+        const js = (await Promise.all(['core', 'map', 'battle', 'ui'].map(n => get('js/' + n + '.js')))).join('\n');
+        const page = await get('index.html'), css = page.slice(page.indexOf('>', page.indexOf('<style')) + 1, page.indexOf('</style>'));
+        save(); localStorage.setItem('rd_upd', JSON.stringify({ v: r.v, data: r.data, js, css }));
+        b.textContent = 'Restarting...'; setTimeout(() => location.reload(), 300);
+      } catch (e) { b.disabled = false; b.textContent = 'Update failed - tap to retry'; }
+    };
+  } catch (e) { /* offline: nothing to show */ }
 }
 function fitTitle() {   // biggest whole-number scale of the 240x160 picture that leaves room for the logo and button
   const f = document.querySelector('#title .tpic'); if (!f) return;
@@ -771,7 +793,7 @@ async function boot() {
   addEventListener('beforeunload', save);
   setInterval(save, 15000);
   addEventListener('pointerdown', unlockAudio, { once: false });
-  showTitle(); requestAnimationFrame(frame);
+  showTitle(); requestAnimationFrame(frame); if (window.__updOK) window.__updOK();   // started fine: keep this code
   setTimeout(() => { for (const S of DB.ts) { const im = img('img/ts/' + S.ts + '.png'); if (im.decode) im.decode().catch(() => {}); } }, 300);   // tilesets ready before any preview
 }
 boot();

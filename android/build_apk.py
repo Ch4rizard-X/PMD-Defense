@@ -79,6 +79,7 @@ def manifest(vcode, vname):
     A = lambda n, t, v: (n, True, t, v)
     return axml(('manifest', [A('versionCode', T_INT, vcode), A('versionName', T_STRING, vname), ('package', False, T_STRING, PKG)], [
         ('uses-sdk', [A('minSdkVersion', T_INT, 24), A('targetSdkVersion', T_INT, 34)], []),
+        ('uses-permission', [A('name', T_STRING, 'android.permission.INTERNET')], []),   # online code updates from GitHub
         ('application', [A('label', T_STRING, LABEL), A('hardwareAccelerated', T_BOOL, True)], [
             ('activity', [A('name', T_STRING, PKG + '.Main'), A('exported', T_BOOL, True), A('label', T_STRING, LABEL),
                           A('configChanges', T_INT, 0x0FB0), A('screenOrientation', T_INT, 13)], [   # 13 = fullUser: follows rotation, respects the lock
