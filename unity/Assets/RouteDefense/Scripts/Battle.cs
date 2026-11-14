@@ -13,6 +13,9 @@ namespace RouteDefense
         public Mon e; public float x, y, at, cd = 0.3f, buft, sbt; public int dir, kills, paid, lastM, metro; public string anim = "Idle", mode = "first";
         public int[] buf = new int[7];   // stat stages by stat id (2 atk, 4 spa, 6 spe)
         public int[] up = new int[3];    // upgrade levels: range, attack speed, power
+        // move skills: timers and timed boosts (Focus Energy, Take Heart, Double Team, Helping Hand, Tailwind, Speed Swap, Acupressure)
+        public Dictionary<int, float> skc = new Dictionary<int, float>(); public float fe, thr, dteam, hh, tw, ssw, acuU, pt; public char acuK; public bool lf, chg, enc;
+        public (int r, float d, float x, float y)? tp;   // nearest path spot for its traps
     }
     public class Enemy
     {
@@ -21,13 +24,16 @@ namespace RouteDefense
         // tier traits (only from moves / abilities it really has) and boss moves
         public int[] bst = new int[7]; public float sh, shm, sht, shcd, tt, dt2, dash, rg, wdot, healHl; public int healMv, prot, dashMv, bwxm; public bool healed, regen, tele, minion;
         public string bwx; public List<int> bup = new List<int>(); public float btWx = 1, btUp = 4, btCall = 8;
+        // type quirks and move skills
+        public int pst; public float ptt, pd, wsl, chill, trF = 1, trU, tyoU, elz, akOff, gs, gsf = 1, pm, lure, back, nt, cuLeft, cuDps, cud; public bool fs, tyoAdd; public int[] tyoT; public string ak0;
+        public Tower psrc, pmT, cuT; public HashSet<Tower> rk = new HashSet<Tower>(); public Dictionary<string, Vector2> sl = new Dictionary<string, Vector2>();
     }
     public class Proj { public float x, y, sp = 300, at; public Enemy tg; public FxAnim fx; public string hfx; public Action<Enemy> done; public bool hit; public int row; public float ang = float.NaN; }
     public class FxInst { public FxAnim a; public float x, y, t, rot; public int row; }
     public class Floater { public float x, y, t; public string txt; public int kind; }
     public class Ask { public int id, lv, ab, nat; public int[] iv; }
 
-    public class Battle
+    public partial class Battle
     {
         public static Battle B;
         public static Action<string, int> Toast; public static Action TeamChanged, Finished, AskJoin;
@@ -84,7 +90,7 @@ namespace RouteDefense
         void SyncWeather()   // what's in the sky: a living boss's weather, otherwise yours
         {
             if (bwx != null && !(bwx.e.hp > 0 && en.Contains(bwx.e))) bwx = null;
-            weather = bwx != null ? new Weather { k = bwx.k, boss = true } : pwx != null ? new Weather { k = pwx.k } : null;
+            weather = bwx != null ? new Weather { k = bwx.k, boss = true } : pwx != null ? new Weather { k = pwx.k } : mwx != null && mwxUntil > time ? new Weather { k = mwx.k } : null;
         }
         string Wk => weather != null ? weather.k : null;
         public static int WaveCount(int tier) => Cfg.C.waveBase + (tier - 1) * Cfg.C.waveStep;   // 40 waves at tier 1 on every map, +1 per tier (59 at tier 20)
@@ -208,11 +214,11 @@ namespace RouteDefense
             string k = DB.AbKey(e.ab); var ty = DB.SP[e.id].t;
             if (ty.Contains(13)) return "Psychic type";
             if (ty.Contains(7)) return "Ghost type";   // Ghosts see Ghosts
-            int m = e.mv.FirstOrDefault(SEE_MOVES.Contains); if (m != 0) return "knows " + DB.Mv(m).n;
+            int m = e.mv.FirstOrDefault(x => SEE_MOVES.Contains(x) || (DB.Mv(x) != null && DB.Mv(x).n == "Defog")); if (m != 0) return "knows " + DB.Mv(m).n;
             return k == "keen-eye" || k == "frisk" ? "ability " + DB.Abil[e.ab].n : null;
         }
         public static bool Sees(Tower t) => SeesWhy(t.e) != null;
-        public static float TowerRange(Tower t, int m) => RANGE[DB.Mv(m).c] * (1 + Math.Min(0.25f, t.e.lv / 400f) + Rescue.Mod("range")) * UpK(t, 0);
+        public static float TowerRange(Tower t, int m) => RANGE[DB.Mv(m).c] * (1 + Math.Min(0.25f, t.e.lv / 400f) + Rescue.Mod("range")) * UpK(t, 0) * (HasT(t, 2) ? 1.15f : 1);   // Flying: Far sight
         public static float RangeFor(Mon e) { var ms = e.mv.Where(m => DB.MoveUse(m) != null).ToList(); return ms.Count == 0 ? 40 : ms.Max(m => RANGE[DB.Mv(m).c] * (1 + Math.Min(0.25f, e.lv / 400f) + Rescue.Mod("range"))); }
         public static float MaxRange(Tower t) => Math.Max(40, RangeFor(t.e));
         bool CanHit(Tower t, int m, Enemy e)
@@ -245,7 +251,7 @@ namespace RouteDefense
             int c = DB.PlaceCost(e);
             if (cash < c || towers.Any(t => t.e == e) || towers.Count >= 10 || !CanPlace(e, x, y)) return null;
             cash -= c;
-            var tw = new Tower { e = e, x = x, y = y, paid = c }; towers.Add(tw); Gfx.Sfx("place"); return tw;
+            var tw = new Tower { e = e, x = x, y = y, paid = c, pt = time }; towers.Add(tw); Gfx.Sfx("place"); return tw;
         }
         /* upgrades for a placed Pokémon, paid with battle cash: Range, Attack speed and Power; each level costs a share of its placing cost.
            Recalling it refunds 70% of everything paid, upgrades included. Numbers come from the online settings. */
@@ -270,8 +276,9 @@ namespace RouteDefense
         static bool Aoe(Move m) => m.tg == 9 || m.tg == 11 || m.tg == 14 || m.tg == 12;
         bool TowerAct(Tower t)
         {
-            var st = DB.MonStats(t.e); var me = DB.SP[t.e.id];
-            string hk = DB.HeldKey(t.e); var moves = hk.StartsWith("choice") ? t.e.mv.Take(1).ToList() : t.e.mv;
+            var tf = TransformSrc(t);   // Transform: a copy of the strongest teammate, at its own level
+            var st = tf != null ? DB.CalcStats(tf.e.id, t.e.lv, DB.IvsOf(tf.e), DB.NatOf(tf.e)) : DB.MonStats(t.e); var me = DB.SP[(tf ?? t).e.id];
+            string hk = DB.HeldKey(t.e); var moves = tf != null ? tf.e.mv.Where(x => DB.MoveUse(x) != null).ToList() : hk.StartsWith("choice") ? t.e.mv.Take(1).ToList() : t.e.mv;
             Pick best = null;
             foreach (int m in moves)
             {
@@ -297,8 +304,10 @@ namespace RouteDefense
             var M_ = DB.Mv(b.m); DB.FxMoves.TryGetValue(b.m, out var fxm); fxm = fxm ?? new MoveFx();
             t.dir = DirRow(b.tg.x - t.x, b.tg.y - t.y); t.anim = M_.c == 2 ? "Attack" : "Shoot"; t.at = 0;
             float cd = 5.5f / Mathf.Sqrt(Math.Max(5, M_.pp)) * (M_.pr > 0 ? 0.8f : 1);
-            cd /= 1 + st[5] * STAGE(t.buf[6]) / 150f;
+            cd /= 1 + st[5] * STAGE(BufOf(t, 6)) / 150f;
             cd /= UpK(t, 1);   // Attack speed upgrades
+            if (HasT(t, 6)) cd /= 1 + 0.05f * towers.Count(o => o != t && HasT(o, 6));   // Bug: Swarm
+            if (HasM(t, "Endure") && lives < 25) cd /= 1.3f; if (t.tw > time) cd /= 1.25f; if (t.ssw > time) cd /= 1.4f; if (t.acuK == 's' && t.acuU > time) cd /= 1.3f;   // move skills
             string ak = DB.AbKey(t.e.ab), hk = DB.HeldKey(t.e), wk = Wk; var ty = DB.SP[t.e.id].t;
             cd /= 1 + Rescue.Mod("atkSpeed") + Math.Max(0, ty.Max(x => Rescue.Mod("ts" + x)));
             int tile = M.t[(int)(t.y / TZ), (int)(t.x / TZ)];
@@ -331,7 +340,7 @@ namespace RouteDefense
             if (e.hp <= 0) return;
             var M_ = DB.Mv(m); string use = DB.MoveUse(m); var me = DB.SP[t.e.id]; int L = t.e.lv; string ak = DB.AbKey(t.e.ab), hk = DB.HeldKey(t.e), ek = e.ak;
             float acc = M_.a > 0 ? M_.a * (ak == "compound-eyes" ? 1.3f : 1) * (ak == "hustle" && M_.c == 2 ? 0.8f : 1) * (hk == "wide-lens" ? 1.1f : hk == "zoom-lens" ? 1.2f : 1) : 100;
-            if (ak == "no-guard") acc = 100;
+            if (ak == "no-guard" || HasM(t, "Lock-On") || HasM(t, "Mind Reader")) acc = 100;
             string wk = Wk;
             if ((wk == "rain" && (m == 87 || m == 542)) || (wk == "hail" && m == 59)) acc = 100;   // Thunder / Hurricane in rain, Blizzard in hail never miss
             if (acc < 100 && rnd * 100 > acc) { Float(e, "MISS", 1); return; }
@@ -347,22 +356,29 @@ namespace RouteDefense
                 else
                 {
                     bool phys = M_.c == 2;
-                    float A = phys ? st[1] * STAGE(t.buf[2]) : st[3] * STAGE(t.buf[4]);
+                    float A = phys ? (HasM(t, "Power Trick") ? Math.Max(st[1], st[2]) : st[1]) * STAGE(BufOf(t, 2)) : st[3] * STAGE(BufOf(t, 4));
                     if (phys && (ak == "huge-power" || ak == "pure-power")) A *= 2;
                     if (phys && ak == "hustle") A *= 1.5f;
                     if ((phys && hk == "choice-band") || (!phys && hk == "choice-specs")) A *= 1.5f;
-                    float D = phys ? e.st[2] * STAGE(Mathf.Clamp(e.stg[3] + e.bst[3], -6, 6)) : e.st[4] * STAGE(Mathf.Clamp(e.stg[5] + e.bst[5], -6, 6));
+                    float D = (phys ? e.st[2] * STAGE(Mathf.Clamp(e.stg[3] + e.bst[3], -6, 6)) : e.st[4] * STAGE(Mathf.Clamp(e.stg[5] + e.bst[5], -6, 6))) * (e.gs > time ? e.gsf : 1);   // Guard Split / Octolock
                     int hits = ak == "skill-link" ? M_.h[1] : M_.h[0] + UnityEngine.Random.Range(0, M_.h[1] - M_.h[0] + 1);
-                    var ty = DB.SP[e.id].t; if (ak == "scrappy" && (M_.t == 0 || M_.t == 1)) ty = ty.Where(x => x != 7).ToArray();
+                    var ty = EnTypes(e); if (ak == "scrappy" && (M_.t == 0 || M_.t == 1)) ty = ty.Where(x => x != 7).ToArray();
                     float ef = DB.Eff(M_.t, ty);
                     if (ef == 0 || (ek == "wonder-guard" && ef <= 1)) { Float(e, "MISS", 1); return; }
-                    int cs = Mathf.Clamp(M_.cr + (ak == "super-luck" ? 1 : 0) + (hk == "scope-lens" || hk == "razor-claw" ? 1 : 0), 0, 3);
-                    float crit = ek != "battle-armor" && ek != "shell-armor" && rnd < new[] { 1 / 24f, 1 / 8f, 1 / 2f, 1f }[cs] + Rescue.Mod("crit") ? (ak == "sniper" ? 2.25f : 1.5f) : 1;
+                    int cs = Mathf.Clamp(M_.cr + (t.fe > time ? 2 : 0) + (HasT(t, 15) ? 1 : 0) + (ak == "super-luck" ? 1 : 0) + (hk == "scope-lens" || hk == "razor-claw" ? 1 : 0), 0, 3);
+                    bool sure = t.lf && ek != "battle-armor" && ek != "shell-armor"; if (sure) t.lf = false;   // Laser Focus
+                    float crit = sure || ek != "battle-armor" && ek != "shell-armor" && rnd < new[] { 1 / 24f, 1 / 8f, 1 / 2f, 1f }[cs] + Rescue.Mod("crit") ? (ak == "sniper" ? 2.25f : 1.5f) : 1;
                     float pw = M_.p > 0 ? M_.p : 60; if (ak == "technician" && pw <= 60) pw *= 1.5f;
                     float mod = (me.t.Contains(M_.t) ? (ak == "adaptability" ? 2 : 1.5f) + Rescue.Mod("stab") : 1) * ef * crit;
                     mod *= 1 + Rescue.Mod("power") + Rescue.Mod("tp" + M_.t);
                     mod *= UpK(t, 2);   // Power upgrades
-                    if (e.boss) mod *= 1 + Rescue.Mod("bossDmg");
+                    if (e.boss) mod *= 1 + Rescue.Mod("bossDmg") + (HasT(t, 1) ? 0.2f : 0);   // Fighting: Boss hitter
+                    if (HasT(t, 5) && e.rk.Add(t)) mod *= 1.3f;   // Rock: Crush (first hit on each enemy)
+                    if (towers.Any(o => o != t && HasT(o, 17) && Dist(o.x, o.y, t.x, t.y) <= 90)) mod *= 1.05f;   // Fairy: Aura
+                    if (M_.t == 12 && t.chg) { mod *= 2; t.chg = false; } if (M_.t == 12 && e.elz > time) mod *= 2;   // Charge / Electrify
+                    if (t.dteam > time) mod *= 2; if (t.enc) { mod *= 2; t.enc = false; } if (t.hh > time) mod *= 1.25f; if (!phys && t.thr > time) mod *= 1.2f;   // Double Team / Encore / Helping Hand / Take Heart
+                    if (t.acuK == 'd' && t.acuU > time) mod *= 1.3f; if (terr.TryGetValue(M_.t, out var tu) && tu > time) mod *= 1.3f;   // Acupressure / terrains
+                    if (HasM(t, "Ingrain")) mod *= 1 + Math.Min(0.3f, 0.05f * Mathf.Floor((time - t.pt) / 10));
                     float wp = 0.5f + Rescue.Mod("weatherPower");   // weather: Rain / Sun boost one type and weaken the other x0.5
                     if (wk == "rain") mod *= M_.t == 10 ? 1 + wp : M_.t == 9 ? 0.5f : 1;
                     if (wk == "sun") mod *= M_.t == 9 ? 1 + wp : M_.t == 10 ? 0.5f : 1;
@@ -382,7 +398,7 @@ namespace RouteDefense
                     if (ek == "dry-skin" && M_.t == 9) mod *= 1.25f;
                     if ((ek == "filter" || ek == "solid-rock" || ek == "prism-armor") && ef > 1) mod *= 0.75f;
                     if ((ek == "multiscale" || ek == "shadow-shield") && e.hp >= e.max) mod *= 0.5f;
-                    if (e.armor && (M_.p > 0 ? M_.p : 60) < 60) mod *= 0.5f;
+                    if (e.armor && (M_.p > 0 ? M_.p : 60) < 60 && !HasT(t, 8)) mod *= 0.5f;   // Steel: Pierce
                     dmg = 0;
                     for (int h = 0; h < hits; h++) dmg += ((2f * L / 5 + 2) * pw * A / D / 50 + 2) * mod * (0.85f + rnd * 0.15f);
                     dmg = Math.Max(1, Mathf.Floor(dmg));
@@ -390,7 +406,7 @@ namespace RouteDefense
                     if (e.sts == "freeze" && M_.t == 9) { e.sts = null; e.stop = 0; }
                 }
                 if (ek == "sturdy" && !e.sturdy && e.hp >= e.max && dmg >= e.hp) { dmg = e.hp - 1; e.sturdy = true; }
-                Hurt(t, e, dmg);
+                e.fs = m == 206; mlab = M_.n; Hurt(t, e, dmg); e.fs = false; QuirkHit(t, e, dmg);   // False Swipe: a knockout by it is 3x as likely to ask to join
                 if (e.hp > 0 && M_.ai != "none" && DB.AILMENTS.Contains(M_.ai) && Chance(M_.ac)) Inflict(e, M_.ai, t);
                 if (e.hp > 0 && ((M_.fl > 0 && Chance(M_.fl)) || (M_.fl == 0 && (hk == "kings-rock" || hk == "razor-fang") && rnd < 0.1f))) e.stop = Math.Max(e.stop, 0.35f);
                 if (e.hp > 0 && M_.sc.Count > 0 && M_.tg != 7 && Chance(M_.sch)) Debuff(e, M_.sc, t);
@@ -417,21 +433,23 @@ namespace RouteDefense
             if (ai == "freeze" && Wk == "sun") return;   // nothing freezes in sun
             e.sts = ai; e.stt = DUR[ai] * (e.boss ? 0.5f : 1) * (1 + Rescue.Mod("statusDur"));
             if (ai == "sleep" || ai == "freeze" || ai == "trap") e.stop = Math.Max(e.stop, e.stt);
+            if (t != null && (ai == "sleep" || ai == "freeze" || ai == "trap" || ai == "paralysis" || ai == "confusion")) MeterCtl(t, e.stt);
         }
         void Hurt(Tower t, Enemy e, float dmg)
         {
             // Protect-type moves raise a shield that soaks up a quarter of its HP
-            if (e.prot != 0 && e.sh <= 0 && e.shcd <= 0 && e.hp - dmg > 0) { e.shm = e.sh = Mathf.Ceil(e.max * 0.25f); e.sht = 3; e.shcd = 9; Float(e, DB.Mv(e.prot).n, 4); }
-            if (e.sh > 0) { float a = Math.Min(e.sh, dmg); e.sh -= a; dmg -= a; if (e.sh <= 0) e.sht = 0; if (dmg <= 0) { e.hurt = 0.1f; return; } }
-            e.hp -= dmg; e.hurt = 0.25f; Float(e, ((int)dmg).ToString(), 0);
-            if (e.healMv != 0 && !e.healed && e.hp > 0 && e.hp < e.max * 0.4f) { e.healed = true; e.hp = Math.Min(e.max, e.hp + Mathf.Ceil(e.max * e.healHl)); Float(e, DB.Mv(e.healMv).n, 4); }
+            bool phase_ = t != null && HasT(t, 7);   // Ghost: Phase - attacks go through Protect shields
+            if (!phase_ && !(e.nt > time) && e.prot != 0 && e.sh <= 0 && e.shcd <= 0 && e.hp - dmg > 0) { e.shm = e.sh = Mathf.Ceil(e.max * 0.25f); e.sht = 3; e.shcd = 9; Float(e, DB.Mv(e.prot).n, 4); }
+            if (!phase_ && e.sh > 0) { float a = Math.Min(e.sh, dmg); e.sh -= a; dmg -= a; if (e.sh <= 0) e.sht = 0; if (dmg <= 0) { e.hurt = 0.1f; return; } }
+            MeterDmg(t, Math.Min(dmg, Math.Max(0, e.hp)), mlab); e.hp -= dmg; e.hurt = 0.25f; Float(e, ((int)dmg).ToString(), 0);
+            if (e.healMv != 0 && !e.healed && !(e.nt > time) && e.hp > 0 && e.hp < e.max * 0.4f) { e.healed = true; e.hp = Math.Min(e.max, e.hp + Mathf.Ceil(e.max * e.healHl)); Float(e, DB.Mv(e.healMv).n, 4); }
             if (e.hp <= 0) Ko(t, e);
         }
         void BossAct(Enemy e, float dt)
         {
             e.btWx -= dt; e.btUp -= dt; e.btCall -= dt;
             if (e.bwx != null && bwx == null) { bwx = new Weather { k = e.bwx, e = e, boss = true }; Float(e, DB.Mv(e.bwxm).n, 4); }   // a boss's weather lasts until it is knocked out
-            if (e.bup.Count > 0 && e.btUp <= 0)
+            if (e.bup.Count > 0 && e.btUp <= 0 && !towers.Any(t => HasM(t, "Mist") && Dist(t.x, t.y, e.x, e.y) <= SkR(t)))
             {
                 e.btUp = 9; int m = e.bup[UnityEngine.Random.Range(0, e.bup.Count)]; var M_ = DB.Mv(m); bool up = false;
                 foreach (var c in M_.sc) if ((c[0] == 3 || c[0] == 5 || c[0] == 6) && c[1] > 0 && e.bst[c[0]] < 6) { e.bst[c[0]] = Math.Min(6, e.bst[c[0]] + c[1]); up = true; }
@@ -449,7 +467,7 @@ namespace RouteDefense
         }
         void Ko(Tower t, Enemy e)
         {
-            e.hp = 0; e.dead = 0.5f; kills++;
+            e.hp = 0; e.dead = 0.5f; kills++; { var mr = Mtr(t); if (mr != null) mr.ko++; }
             cash += Mathf.RoundToInt((2 + e.lv / 6 + (e.boss ? 50 : 0)) * (t != null && DB.HeldKey(t.e) == "amulet-coin" ? 2 : 1) * (1 + Rescue.Mod("koCash")));
             var sp = DB.SP[e.id];
             if (t != null)
@@ -466,7 +484,7 @@ namespace RouteDefense
                 // you choose whether to take it, like the original; a declined species stops asking for the rest of this battle
                 if (sp.anim && !declined.Contains(e.id) && !asks.Any(a => a.id == e.id))
                 {
-                    float p = (e.boss ? 0.04f + Rescue.Mod("bossRecruit") : 0.005f * (sp.cr / 255f) * (1 + th * 0.05f) * (1 - 0.5f * Mathf.Clamp01((th - 4) / 5f))) * (1 + Rescue.Mod("recruit"));   // halved from tier 9 up
+                    float p = (e.boss ? 0.04f + Rescue.Mod("bossRecruit") : 0.005f * (sp.cr / 255f) * (1 + th * 0.05f) * (1 - 0.5f * Mathf.Clamp01((th - 4) / 5f))) * (1 + Rescue.Mod("recruit")) * (e.fs ? 3 : 1) * (e.lure > time ? 2 : 1);   // halved from tier 9 up; False Swipe x3; Sweet Scent x2
                     if (rnd < p) { asks.Add(new Ask { id = e.id, lv = e.lv, ab = e.ab, nat = e.nat, iv = e.iv }); Gfx.Sfx("join"); AskJoin?.Invoke(); }
                 }
             }
@@ -480,7 +498,7 @@ namespace RouteDefense
         void Float(Enemy e, string txt, int kind) => Float(e.x, e.y, txt, kind);
         void Float(float x, float y, string txt, int kind) => fl.Add(new Floater { x = x + (rnd * 8 - 4), y = y - 24 * SPR, txt = txt, kind = kind });
         /* user effects that flow in from one side of the sheet: turned so that side faces the target (value = which way that side points; PI/2 = down) */
-        static readonly Dictionary<string, float> FX_FROM = new Dictionary<string, float> { { "efob023/anim00", Mathf.PI / 2 }, { "efob023/anim08", Mathf.PI / 2 } };   // Absorb, Mega Drain, Giga Drain, Leech Life...
+        static readonly Dictionary<string, float> FX_FROM = new Dictionary<string, float> { { "efob023/anim00", Mathf.PI / 2 }, { "efob023/anim08", Mathf.PI / 2 } }.WithEos();   // Absorb, Mega Drain, Giga Drain, Leech Life...
         void AddFx(string rf, float x, float y, int dir, float ang = float.NaN)
         {
             if (!DB.FxAnims.TryGetValue(rf, out var a)) return;
@@ -519,11 +537,16 @@ namespace RouteDefense
                         : ety.Contains(14) || new[] { "ice-body", "snow-cloak", "overcoat", "magic-guard" }.Contains(e.ak);
                     if (!safe) { e.wdot += e.max * 0.02f * (1 + Rescue.Mod("weatherChip")) * dt * (e.boss ? 0.4f : 1); if (e.wdot >= 1) { float d = Mathf.Floor(e.wdot); e.wdot -= d; e.hp -= d; if (e.hp <= 0) { Ko(null, e); continue; } } }
                 }
+                if (e.akOff > 0 && time > e.akOff) { e.ak = e.ak0; e.akOff = 0; }
+                if (e.cuLeft > 0) { float d0 = Math.Min(e.cuLeft, e.cuDps * dt); e.cuLeft -= d0; e.cud += d0; if (e.cud >= 1) { float d = Mathf.Floor(e.cud); e.cud -= d; MeterDmg(towers.Contains(e.cuT) ? e.cuT : null, Math.Min(d, e.hp), "Curse", true); e.hp -= d; if (e.hp <= 0) { Ko(towers.Contains(e.cuT) ? e.cuT : null, e); continue; } } }
+                if (e.pm > 0 && time >= e.pm) { e.pm = 0; Float(e, "Perish", 4); mlab = "Perish Song"; Hurt(towers.Contains(e.pmT) ? e.pmT : null, e, Mathf.Ceil(e.max * 0.3f)); if (e.hp <= 0) continue; }
+                if (e.pst > 0) { e.ptt -= dt; if (e.ptt <= 0) e.pst = 0; else if (e.ak != "magic-guard") { e.pd += e.max * 0.01f * e.pst * dt * (e.boss ? 0.4f : 1); if (e.pd >= 1) { float d = Mathf.Floor(e.pd); e.pd -= d; MeterDmg(towers.Contains(e.psrc) ? e.psrc : null, Math.Min(d, e.hp), "Toxic stacks (Poison quirk)", true); e.hp -= d; if (e.hp <= 0) { Ko(towers.Contains(e.psrc) ? e.psrc : null, e); continue; } } } }
+                e.chill -= dt; e.wsl -= dt;
                 e.hurt = Math.Max(0, e.hurt - dt); e.imm -= dt;
                 if (e.sht > 0) { e.sht -= dt; if (e.sht <= 0) e.sh = 0; } e.shcd -= dt;
                 if (e.regen) { e.rg += e.max * 0.01f * dt; if (e.rg >= 1) { float h = Mathf.Floor(e.rg); e.rg -= h; e.hp = Math.Min(e.max, e.hp + h); } }
-                if (e.dashMv != 0) { if (e.dash > 0) e.dash -= dt; else if (e.d > 0 && e.stop <= 0 && e.sts == null && (e.dt2 -= dt) <= 0) { e.dash = 0.6f; e.dt2 = 4 + rnd * 2; } }
-                if (e.tele && e.stop <= 0 && e.sts == null && e.d > 0 && (e.tt -= dt) <= 0) { e.tt = 7 + rnd * 3; e.d = Math.Min(RouteOf(e).len - 30, e.d + 70); e.placed = false; Float(e, "Teleport", 4); }
+                if (e.dashMv != 0) { if (e.dash > 0) e.dash -= dt; else if (e.d > 0 && e.stop <= 0 && e.sts == null && !(e.nt > time) && (e.dt2 -= dt) <= 0) { e.dash = 0.6f; e.dt2 = 4 + rnd * 2; } }
+                if (e.tele && e.stop <= 0 && e.sts == null && !(e.nt > time) && e.d > 0 && (e.tt -= dt) <= 0) { e.tt = 7 + rnd * 3; e.d = Math.Min(RouteOf(e).len - 30, e.d + 70); e.placed = false; Float(e, "Teleport", 4); }
                 if (e.boss && e.d > 0) BossAct(e, dt);
                 if (e.stgt > 0) { e.stgt -= dt; if (e.stgt <= 0) e.stg = new int[7]; }
                 if (e.sts != null)
@@ -533,7 +556,7 @@ namespace RouteDefense
                     if (dps > 0 && e.ak != "magic-guard")
                     {
                         e.dot += e.max * dps * dt * (e.boss ? 0.4f : 1) * (e.bind && e.sts == "trap" ? 2 : 1);
-                        if (e.dot >= 1) { float d = Mathf.Floor(e.dot); e.dot -= d; e.hp -= d; if (e.hp <= 0) { Ko(e.src != null && towers.Contains(e.src) ? e.src : null, e); continue; } }
+                        if (e.dot >= 1) { float d = Mathf.Floor(e.dot); e.dot -= d; MeterDmg(e.src != null && towers.Contains(e.src) ? e.src : null, Math.Min(d, e.hp), e.sts == "burn" ? "Burn" : e.sts == "poison" ? "Poison" : e.sts == "trap" ? "Trap (bind)" : e.sts == "leech-seed" ? "Leech Seed" : "Status", true); e.hp -= d; if (e.hp <= 0) { Ko(e.src != null && towers.Contains(e.src) ? e.src : null, e); continue; } }
                     }
                     if (e.stt <= 0) { if (e.sts == "yawn") { e.sts = null; Inflict(e, "sleep", e.src); } else { if (e.sts == "sleep") e.imm = 4; e.sts = null; } }
                 }
@@ -543,12 +566,14 @@ namespace RouteDefense
                     float v = e.spd * e.pace * (1 + 0.12f * Mathf.Sin(time * e.sw * 1.7f + e.ph)) * STAGE(Mathf.Clamp(e.stg[6] + e.bst[6], -6, 6)) * (e.dash > 0 ? 3 : 1);
                     if (e.ak == "quick-feet" && e.sts != null) v *= 1.5f;
                     if (e.ak == "speed-boost") { e.sbt += dt; v *= Math.Min(2, 1 + e.sbt / 40); }
+                    v *= SkSpeed(e); if (e.back > time) v = -Math.Abs(v) * 0.6f; if (DecoyBlocks(e)) v = 0;   // move skills
+                    if (e.chill > 0) v *= 0.85f; if (e.wsl > 0) v *= 0.9f; if (towers.Any(t => HasT(t, 11) && Dist(t.x, t.y, e.x, e.y) <= MaxRange(t))) v *= 0.9f;   // Ice / Water / Grass quirks
                     if (e.sts == "paralysis") v *= 0.5f;
                     if (e.sts == "confusion") v *= Mathf.Sin(time * 6) > 0 ? 0.6f : -0.3f;
-                    e.d += v * dt;
+                    e.d = Math.Max(e.back > time ? 1 : -1e9f, e.d + v * dt);
                 }
                 if (e.dig) { e.digt -= dt; if (e.digt <= 0) { e.under = !e.under; e.digt = e.under ? 2.5f : 2.2f; } }
-                if (e.hide) { e.rev -= dt; foreach (var t in towers) if (Sees(t) && Dist(t.x, t.y, e.x, e.y) <= MaxRange(t)) { e.rev = 0.4f; break; } }
+                if (e.hide) { e.rev -= dt; foreach (var t in towers) if (Sees(t) && Dist(t.x, t.y, e.x, e.y) <= MaxRange(t) * (HasT(t, 13) ? 1.5f : 1)) { e.rev = 0.4f; break; } }
                 var rt = RouteOf(e); var p = MapGen.PathAt(rt, Math.Max(0, e.d));
                 // drift across the path instead of marching on the centre line; ease round corners; face along the path
                 float off = e.lane + Mathf.Sin(time * e.sw + e.ph) * 5, nx = -Mathf.Sin(p.z), ny = Mathf.Cos(p.z);
@@ -571,6 +596,7 @@ namespace RouteDefense
                 if (t.anim != "Idle" && t.at > AnimLen(t.e.id, t.anim)) { t.anim = "Idle"; t.at = 0; }
                 if (t.cd <= 0 && phase == "wave") { if (!TowerAct(t)) t.cd = 0.15f; }
             }
+            SkillTick(dt);
             for (int i = q2.Count - 1; i >= 0; i--) { var a = q2[i]; a.t -= dt; if (a.t <= 0) { q2.RemoveAt(i); a.fn(); } else q2[i] = a; }
             foreach (var p in proj)
             {

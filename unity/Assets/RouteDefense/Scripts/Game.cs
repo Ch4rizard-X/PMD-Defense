@@ -20,6 +20,7 @@ namespace RouteDefense
             Screen.autorotateToPortrait = Screen.autorotateToLandscapeLeft = Screen.autorotateToLandscapeRight = true;
             Screen.autorotateToPortraitUpsideDown = false; Screen.orientation = ScreenOrientation.AutoRotation;
             DB.LoadAll(); Save.Load();
+            Application.targetFrameRate = Save.G.smooth ? 60 : 30;   // Battery saver (default): 30 fps keeps the phone cooler
             Cfg.LoadCached(); StartCoroutine(Cfg.Fetch());   // balance numbers: last downloaded copy now, a fresh one in the background
             gameObject.AddComponent<AudioListener>();   // the scene has no camera with one
             Gfx.InitAudio(gameObject);

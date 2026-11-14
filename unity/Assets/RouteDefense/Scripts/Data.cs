@@ -20,7 +20,7 @@ namespace RouteDefense
         public int[] h; public List<int[]> sc = new List<int[]>();
     }
     public class AnimMeta { public int fw, fh, n, r, hit, y; public int[] d; public float[][] sh; public int Total; }
-    public class FxAnim { public string f; public int fw, fh, n, r; public int[] d; public int Total; }
+    public class FxAnim { public string f; public int fw, fh, n, r; public int[] d; public int Total; public float ox = -1, oy = -1; }   // ox/oy: anchor point inside the frame (Explorers of Sky sheets); -1 = centre
     public class MoveFx { public string u, p, h; }
     public class Setting { public string name, game, ts, liq; public int cols; public int[] types; public int[] rules; }
     public class Named { public string k, n, d; }
@@ -115,7 +115,7 @@ namespace RouteDefense
                 TS.Add(new Setting { name = Json.S(o["name"]), game = Json.S(o["game"]), ts = Json.S(o["ts"]), cols = Json.GI(o, "cols"), types = Json.IA(o["types"]), liq = Json.S(o["liq"]), rules = Json.IA(o["rules"]) });
             }
             var fx = Json.O(Load("fx"));
-            foreach (var kv in Json.O(fx["anims"])) { var o = Json.O(kv.Value); var a = new FxAnim { f = Json.S(o["f"]), fw = Json.GI(o, "fw"), fh = Json.GI(o, "fh"), n = Json.GI(o, "n"), r = Json.GI(o, "r"), d = Json.IA(o["d"]) }; a.Total = Math.Max(1, a.d.Sum()); FxAnims[kv.Key] = a; }
+            foreach (var kv in Json.O(fx["anims"])) { var o = Json.O(kv.Value); var a = new FxAnim { f = Json.S(o["f"]), fw = Json.GI(o, "fw"), fh = Json.GI(o, "fh"), n = Json.GI(o, "n"), r = Json.GI(o, "r"), d = Json.IA(o["d"]), ox = o.ContainsKey("ox") ? Json.GI(o, "ox") : -1, oy = o.ContainsKey("oy") ? Json.GI(o, "oy") : -1 }; a.Total = Math.Max(1, a.d.Sum()); FxAnims[kv.Key] = a; }
             foreach (var kv in Json.O(fx["moves"])) { var o = Json.O(kv.Value); FxMoves[int.Parse(kv.Key)] = new MoveFx { u = Json.Get(o, "u") as string, p = Json.Get(o, "p") as string, h = Json.Get(o, "h") as string }; }
             var snd = Json.O(Load("snd"));
             foreach (var kv in Json.O(snd["music"])) Music[kv.Key] = Json.S(kv.Value);
@@ -191,7 +191,8 @@ namespace RouteDefense
             if (m.c != 1) s += " - Pow " + (m.p > 0 ? m.p.ToString() : "-");
             if (m.a > 0) s += " - Acc " + m.a;
             s += " - PP " + m.pp;
-            if (u == null) s += " - (no use in battle)";
+            string sk = Battle.SkillDesc(m.n); if (sk != null) s += " - " + sk; else if (u == null) s += " - (no use in battle)";
+            if (id == 206) s += " - Knockouts with it are 3x as likely to ask to join";
             return s;
         }
         public static float MoveValue(int id, int sp)
@@ -292,7 +293,7 @@ namespace RouteDefense
             }
             return o;
         }
-        public static int PlaceCost(Mon e) => Mathf.RoundToInt((40 + SP[e.id].bst * 0.25f + e.lv * 2.5f) * (1 + Rescue.Mod("placeCost")));
+        public static int PlaceCost(Mon e) => Mathf.RoundToInt((40 + SP[e.id].bst * 0.25f + e.lv * 2.5f) * (1 + Rescue.Mod("placeCost")) * (SP[e.id].t.Contains(0) ? 0.9f : 1));   // Normal: Thrifty
     }
 
     /* ---------- save ---------- */
@@ -302,6 +303,7 @@ namespace RouteDefense
     public class SaveData
     {
         public int v = 2, uid = 1, money, maps, wins, rp; public bool mute; public string ui = "m";   // menu size option
+        public bool smooth, meter; public float mx = -1, my = -1;   // Battery saver off (= smooth 60 fps); damage meter on, and where it was dragged (share of the screen)
         public List<string> tree = new List<string>();
         public List<Pair> mt = new List<Pair> { new Pair { k = 0, v = 1 } };   // per-map tiers: map -> highest tier you can pick (missing = map not open)
         public List<int> mtDone = new List<int>();                             // maps with tier 20 cleared

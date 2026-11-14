@@ -15,6 +15,7 @@ for f in os.listdir(W + 'data'): copy(W + 'data/' + f, U + 'Resources/Data/' + f
 for f in os.listdir(W + 'img/ts'): copy(W + 'img/ts/' + f, U + 'Resources/Ts/' + f)
 for f in os.listdir(W + 'img/fx'): copy(W + 'img/fx/' + f, U + 'Resources/Fx/' + f)
 for f in ('dmg_r.png', 'dmg_b.png'): copy(W + 'img/' + f, U + 'Resources/Ui/' + f)
+copy(W + 'img/ui/pokeball.png', U + 'Resources/Ui/pokeball.png')   # join popup: already-owned marker
 for f in os.listdir(W + 'snd'): copy(W + 'snd/' + f, U + 'Resources/Snd/' + f)
 for f in os.listdir(W + 'img/item'): copy(W + 'img/item/' + f, U + 'Resources/Items/' + f)
 for f in os.listdir(W + 'img/wx'): copy(W + 'img/wx/' + f, U + 'Resources/Wx/' + f)

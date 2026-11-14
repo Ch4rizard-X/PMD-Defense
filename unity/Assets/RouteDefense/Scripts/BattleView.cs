@@ -54,14 +54,23 @@ namespace RouteDefense
         {
             // shrink the camera to exactly the map's shape inside the stage, so nothing shows past the map's edges
             // fill the screen (the map is made in the screen's shape, so little is cut); buttons float on top
+            // the whole map fits the stage (under the top bar, above the team row); the camera rect is cut to the map's shape, top-aligned,
+            // so nothing is drawn past the map's edges and the team row can sit right under it
             float mw = M.W * MapGen.TZ, mh = M.H * MapGen.TZ;
-            float sw = Screen.width * viewport.width, sh = Mathf.Max(1, Screen.height * viewport.height);
-            float k = Mathf.Max(sw / mw, sh / mh) * Mathf.Max(1, zoom);
-            cam.rect = viewport;
+            float sw0 = Screen.width * viewport.width, sh0 = Mathf.Max(1, Screen.height * viewport.height);
+            float k0 = Mathf.Min(sw0 / mw, sh0 / mh), k = k0 * Mathf.Max(1, zoom);
+            float sw = Mathf.Min(sw0, mw * k0), sh = Mathf.Min(sh0, mh * k0);   // the visible window never grows past the map at normal zoom
+            cam.rect = new Rect(viewport.x + (sw0 - sw) / 2f / Screen.width, viewport.y + (sh0 - sh) / Screen.height, sw / Screen.width, sh / Screen.height);
             cam.orthographicSize = sh / k / 2f;
             float hw = sw / k / 2f, hh = sh / k / 2f; if (zc.x < 0) zc = new Vector2(mw / 2f, mh / 2f);
             zc = new Vector2(hw * 2 >= mw ? mw / 2f : Mathf.Clamp(zc.x, hw, mw - hw), hh * 2 >= mh ? mh / 2f : Mathf.Clamp(zc.y, hh, mh - hh));   // never show past the map's edges
             cam.transform.position = new Vector3(zc.x, -zc.y, -10);
+        }
+        /* the map's on-screen rect in UI panel units (top-left origin) */
+        public Rect MapRectPanel(float panelW, float panelH)
+        {
+            if (cam == null || Screen.width <= 0) return new Rect(); var r = cam.rect;
+            return new Rect(r.x * panelW, (1 - r.yMax) * panelH, r.width * panelW, r.height * panelH);
         }
         /* screen pixel -> game pixel */
         public Vector2 ScreenToGame(Vector2 screen)
@@ -73,7 +82,7 @@ namespace RouteDefense
         void LateUpdate()
         {
             var B = Battle.B; bool on = B != null && UI.InBattle;
-            cam.enabled = true; if (!on) { foreach (var v in views.Values) Destroy(v.go); views.Clear(); HideDigits(0); map.enabled = false; ring.enabled = ghostRing.enabled = ghost.enabled = ghostShadow.enabled = false; HideTexts(0); foreach (var gp2 in gatePool) gp2.enabled = false; tint.enabled = false; glow.enabled = false; foreach (var ry in rays) ry.enabled = false; foreach (var wt in wxTiles) wt.enabled = false; return; }
+            cam.enabled = true; if (!on) { foreach (var v in views.Values) Destroy(v.go); views.Clear(); HideDigits(0); map.enabled = false; ring.enabled = ghostRing.enabled = ghost.enabled = ghostShadow.enabled = false; HideTexts(0); foreach (var gp2 in gatePool) gp2.enabled = false; tint.enabled = false; glow.enabled = false; foreach (var ry in rays) ry.enabled = false; foreach (var wt in wxTiles) wt.enabled = false; foreach (var zl in zapPool) zl.enabled = false; return; }
             if (shownMap != B.M) { shownMap = B.M; map.sprite = B.M.sprite; }
             map.enabled = true; map.transform.position = Vector3.zero;
             Fit(B.M);
@@ -150,6 +159,20 @@ namespace RouteDefense
                 v.sr.sprite = Gfx.FxFrame(x.a, f, x.rot != 0 ? 0 : x.row); v.go.transform.position = W(x.x, x.y); v.sr.transform.localScale = Vector3.one * Battle.FXS; v.sr.sortingOrder = 30001;
                 v.sr.transform.localRotation = Quaternion.Euler(0, 0, -x.rot * Mathf.Rad2Deg);
             }
+            // traps and decoys from move skills, drawn with each move's own effect graphics
+            foreach (var tr in B.traps)
+            {
+                if (!DB.FxMoves.TryGetValue(tr.m, out var mf) || !DB.FxAnims.TryGetValue(mf.h ?? mf.u ?? "", out var ta)) continue;
+                var v = Get(tr, false); int f = Gfx.FrameAt(ta.d, ta.Total, B.time % 1.2f, true);
+                v.sr.sprite = Gfx.FxFrame(ta, f, 0); v.go.transform.position = W(tr.x, tr.y); v.sr.transform.localScale = Vector3.one * Battle.FXS; v.sr.sortingOrder = 1; v.sr.color = new Color(1, 1, 1, .85f); v.sr.transform.localRotation = Quaternion.identity;
+            }
+            foreach (var dc in B.decoys)
+            {
+                if (!DB.FxMoves.TryGetValue(dc.m, out var mf) || !DB.FxAnims.TryGetValue(mf.u ?? mf.h ?? "", out var da)) continue;
+                var v = Get(dc, false); int f = Gfx.FrameAt(da.d, da.Total, B.time % 1f, true);
+                v.sr.sprite = Gfx.FxFrame(da, f, 0); v.go.transform.position = W(dc.x, dc.y - 6); v.sr.transform.localScale = Vector3.one * Battle.FXS; v.sr.sortingOrder = (int)dc.y * 2; v.sr.transform.localRotation = Quaternion.identity;
+            }
+            DrawZaps(B);
             var dead = new List<object>(); foreach (var kv in views) if (!kv.Value.used) dead.Add(kv.Key);
             foreach (var k in dead) { Destroy(views[k].go); views.Remove(k); }
 
@@ -212,7 +235,20 @@ namespace RouteDefense
         static readonly Dictionary<string, float> PROJ_FRONT = new Dictionary<string, float> {
             { "efob013/anim48", Mathf.PI / 2 }, { "efob136/anim16", Mathf.PI / 2 }, { "efob136/anim24", Mathf.PI / 2 }, { "efob062/anim00", Mathf.PI / 2 },
             { "efob052/anim00", Mathf.PI / 2 }, { "efob118/anim00", Mathf.PI / 2 }, { "efob013/anim32", Mathf.PI / 2 }, { "efob013/anim08", 0 },
-            { "efob069/anim00", Mathf.PI / 2 }, { "efob127/anim00", Mathf.PI / 2 }, { "efob013/anim16", -Mathf.PI / 2 } };   // Megahorn and Icicle Spear lead with their point; Mud Shot's stack is aligned with its flight
+            { "efob069/anim00", Mathf.PI / 2 }, { "efob127/anim00", Mathf.PI / 2 }, { "efob013/anim16", -Mathf.PI / 2 } }.WithEos();   // Megahorn and Icicle Spear lead with their point; Mud Shot's stack is aligned with its flight
+        /* Electric quirk: a short yellow zigzag between the two enemies */
+        readonly List<LineRenderer> zapPool = new List<LineRenderer>(); Material zapMat;
+        void DrawZaps(Battle B)
+        {
+            int i = 0;
+            foreach (var z in B.zap)
+            {
+                if (i >= zapPool.Count) { var go = new GameObject("zap"); go.transform.SetParent(transform); var lr = go.AddComponent<LineRenderer>(); zapMat = zapMat ?? new Material(Shader.Find("Sprites/Default")); lr.material = zapMat; lr.widthMultiplier = 2; lr.positionCount = 6; lr.sortingOrder = 30002; zapPool.Add(lr); }
+                var l = zapPool[i++]; l.enabled = true; float a = Mathf.Min(1, z.t / 0.1f); l.startColor = l.endColor = new Color(1, .94f, .47f, a);
+                for (int p = 0; p < 6; p++) { float t = p / 5f, j = p == 0 || p == 5 ? 0 : 1; l.SetPosition(p, W(z.ax + (z.bx - z.ax) * t + (Random.value - .5f) * 10 * j, z.ay + (z.by - z.ay) * t - 8 * Battle.ESPR + (Random.value - .5f) * 10 * j) + new Vector3(0, 0, -1)); }
+            }
+            for (; i < zapPool.Count; i++) zapPool[i].enabled = false;
+        }
         V Get(object o, bool unit = true)
         {
             if (!views.TryGetValue(o, out var v))

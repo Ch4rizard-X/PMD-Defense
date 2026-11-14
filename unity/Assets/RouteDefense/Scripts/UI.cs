@@ -128,7 +128,9 @@ namespace RouteDefense
         {
             modal.Clear(); modalClose = onClose; modalSticky = sticky;
             var w = new VisualElement(); w.style.backgroundColor = WIN; Edge(w, EDGE, 3, 10); Pad(w, 14); w.style.maxWidth = 640; w.style.width = new Length(94, LengthUnit.Percent); w.style.maxHeight = new Length(92, LengthUnit.Percent);
-            var sv = Scroll(); w.Add(sv); modal.Add(w); modal.style.display = DisplayStyle.Flex; return sv.contentContainer;
+            var sv = Scroll(); w.Add(sv); modal.Add(w); modal.style.display = DisplayStyle.Flex;
+            if (!sticky) { var x = Btn("X", ClosePanel, true, true); x.style.position = Position.Absolute; x.style.top = 8; x.style.right = 8; x.style.fontSize = 18; modal.Add(x); }   // always-visible way out
+            return sv.contentContainer;
         }
         public static bool ModalOpen => modal.style.display == DisplayStyle.Flex;
         public static void ClosePanel() { var cb = modalClose; modalClose = null; modal.style.display = DisplayStyle.None; modal.Clear(); cb?.Invoke(); }
@@ -237,6 +239,7 @@ namespace RouteDefense
         static void OptionsPanel(Action after)
         {
             var p = Panel(after); var G = Save.G; p.Add(L("Options", 20));
+            var bsb = Box(); var bsr = Add(bsb, Row(true)); bsr.Add(L("Battery saver  ")); bsr.Add(Btn(G.smooth ? "Off (smooth)" : "On", () => { G.smooth = !G.smooth; Application.targetFrameRate = G.smooth ? 60 : 30; Save.Write(); OptionsPanel(after); }, G.smooth, true)); bsb.Add(L("30 fps instead of 60, so the phone stays cooler", 12, DIM)); p.Add(bsb);
             var sb = Box(); var sr = Add(sb, Row(true)); sr.Add(L("Sound  ")); sr.Add(Btn(G.mute ? "Off" : "On", () => { G.mute = !G.mute; Gfx.SetMute(G.mute); Save.Write(); OptionsPanel(after); }, G.mute, true)); p.Add(sb);
             var mb = Box(); mb.Add(L("Menu size")); mb.Add(L("Buttons, text and panels (the map is not affected)", 12, DIM)); var mr = Add(mb, Row(true));
             foreach (var u in UISIZE) { var uk = u.k; mr.Add(Btn(u.n, () => { G.ui = uk; if (Settings != null) Settings.scale = UiScale(); Save.Write(); OptionsPanel(after); }, G.ui != uk, true)); }
@@ -323,6 +326,7 @@ namespace RouteDefense
             var c = Card(); c.Add(Icon(e.id, 56)); c.Add(OneLine(L(DB.SP[e.id].n, 15), 88));
             string extra = (DB.EvoOptions(e).Any(o => o.ok) ? "  EVOLVE" : "") + (e.pend.Count > 0 ? "  NEW MOVE" : "");
             c.Add(L("Lv " + e.lv + extra, 13, extra.Length > 0 ? ACC : DIM));
+            var qk = L(string.Join(" / ", Battle.Quirks(e.id).Select(q => q[0])), 10, Hex("#ffe39a")); qk.style.unityTextAlign = TextAnchor.MiddleCenter; c.Add(qk);   // type quirks
             if (Battle.SeesWhy(e) != null) c.Add(SeesTag());
             if (onClick != null) Click(c, onClick); return c;
         }
@@ -348,6 +352,7 @@ namespace RouteDefense
             var xb = Add(hc, new VisualElement()); xb.style.height = 6; xb.style.width = 200; xb.style.backgroundColor = new Color(0, 0, 0, .4f);
             var xf = Add(xb, new VisualElement()); xf.style.height = 6; xf.style.backgroundColor = Hex("#55ccff"); xf.style.width = new Length(e.lv >= DB.MAXLV ? 100 : Mathf.Clamp01((e.xp - cur) / (float)Mathf.Max(1, nx - cur)) * 100, LengthUnit.Percent);
             hc.Add(L($"HP {st[0]} - Atk {st[1]} - Def {st[2]} - SpA {st[3]} - SpD {st[4]} - Spe {st[5]}", 13, DIM));
+            foreach (var q in Battle.Quirks(e.id)) { var qr = Add(hc, Row(true)); var tg = TypeTag(s.t[Array.FindIndex(s.t, x => Battle.TQ.TryGetValue(x, out var v2) && v2 == q)]); tg.text = q[0]; qr.Add(tg); qr.Add(L(" " + q[1], 13)); }
             hc.Add(L("Placing costs $" + DB.PlaceCost(e) + " battle cash", 13, DIM));
             var iv = DB.IvsOf(e); var nb = Box(); nb.Add(L("Nature: " + DB.NatLabel(e.nat)));
             if (e.mint != 0) { var mt = DB.Tools.Values.FirstOrDefault(x => x.nat == e.mint); nb.Add(L("Stats changed by " + (mt != null ? mt.n : "a Mint") + ": " + DB.NatLabel(e.mint), 12, Hex("#99ff99"))); }
@@ -380,7 +385,8 @@ namespace RouteDefense
                 var r = MoveRow(e.pend[0]); r.Insert(0, L("New move - tap Replace on a move above, or:", 13, Hex("#77ccff")));
                 r.Add(Btn("Don't learn", () => { e.pend.RemoveAt(0); Save.Write(); MonPanel(e, after); }, true, true)); p.Add(r);
             }
-            var rem = DB.LearnedBy(e.id, e.lv).Where(m => !e.mv.Contains(m) && DB.MoveUse(m) != null).ToList();
+            int skI = e.mv.IndexOf(Battle.MID("Sketch")); if (skI >= 0 && !InBattle) p.Add(Btn("Sketch a move", () => SketchPanel(e, skI, () => MonPanel(e, after)), false, true));
+            var rem = DB.LearnedBy(e.id, e.lv).Where(m => !e.mv.Contains(m) && (DB.MoveUse(m) != null || Battle.IsSkill(m))).ToList();
             if (rem.Count > 0) p.Add(Btn("Move Reminder (" + rem.Count + ")", () => RemindPanel(e, () => MonPanel(e, after)), true, true));
             var ev = DB.EvoOptions(e);
             if (ev.Count > 0)
@@ -404,6 +410,17 @@ namespace RouteDefense
                     rr.Add(Btn("Release", () => { if (e.it != 0) Save.G.Add(Save.G.held, e.it, 1); Save.G.box.Remove(e); Save.G.team.Remove(e.u); Save.Write(); ClosePanel(); }));
                     rr.Add(Btn("Keep", () => MonPanel(e, after), true));
                 }, true, true));
+        }
+        /* Sketch: swap it for any move a Pokémon you've seen learns by level */
+        static void SketchPanel(Mon e, int slot, Action back)
+        {
+            var p = Panel(back); var ids = new HashSet<int>();
+            foreach (int id in Save.G.seen) if (DB.SP.TryGetValue(id, out var sp)) foreach (var l in sp.ls) if ((DB.MoveUse(l[1]) != null || Battle.IsSkill(l[1])) && !e.mv.Contains(l[1])) ids.Add(l[1]);
+            var list = ids.Where(DB.Moves.ContainsKey).OrderBy(m => DB.Mv(m).n).ToList();
+            p.Add(L("Sketch", 20)); p.Add(L(DB.SP[e.id].n + " can copy one of " + list.Count + " moves from the Pokémon you've seen. Sketch is replaced by it.", 13, DIM));
+            var f = new TextField(); f.style.marginTop = f.style.marginBottom = 4; p.Add(f); var wrap = Add(p, new VisualElement());
+            void Draw() { wrap.Clear(); string q = (f.value ?? "").ToLower(); foreach (int m in list.Where(x => DB.Mv(x).n.ToLower().Contains(q)).Take(80)) { int mm = m; wrap.Add(Click(MoveRow(m), () => { e.mv[slot] = mm; Save.Write(); Toast(DB.SP[e.id].n + " sketched " + DB.Mv(mm).n + "!"); back(); })); } }
+            f.RegisterValueChangedCallback(_ => Draw()); Draw();
         }
         /* Mints change how the nature affects stats; Bottle Caps raise IVs to 31 (like Hyper Training). Only outside battle. */
         static void ToolPanel(Mon e, Action back)
@@ -603,6 +620,7 @@ namespace RouteDefense
         }
 
         /* ---------- battle screen ---------- */
+        static VisualElement bottomBox, meterBox; static ScrollView teamSV; static Button bmt; static string meterTab = "dmg"; static int meterOpen; static bool meterHold; static float meterT;
         static VisualElement stage, hud, info, teamBar, wprog, bossBar, bossFill, bossTrail; static Label hl, hc, hw, bossName; static Button bgo, bsp, bau, bwx; static float hudT, bossT; static string infoKey = ""; static int lastLives = -1, bannerWave; static Enemy bossRef;
         static bool Portrait => Screen.height > Screen.width;
         static void BeginBattle()
@@ -618,16 +636,17 @@ namespace RouteDefense
             screen.style.flexDirection = FlexDirection.Column; screen.style.alignItems = Align.Stretch; screen.style.justifyContent = Justify.FlexStart;
             stage = Add(screen, new VisualElement()); Full(stage);
             var vg = new Image { sprite = Gfx.Vignette, scaleMode = ScaleMode.StretchToFill }; Full(vg); vg.pickingMode = PickingMode.Ignore; stage.Add(vg);   // soft dark edges so the HUD sits on darker corners
-            hud = Add(screen, Row(true)); hud.style.position = Position.Absolute; hud.style.left = 6; hud.style.top = 6; hud.style.maxWidth = new Length(96, LengthUnit.Percent);
+            hud = Add(screen, Row(false)); hud.style.position = Position.Absolute; hud.style.transformOrigin = new TransformOrigin(new Length(0), new Length(0), 0); hud.style.left = 6; hud.style.top = 6; hud.style.maxWidth = new Length(96, LengthUnit.Percent);
             hud.style.backgroundColor = new Color(.03f, .07f, .19f, .78f); Edge(hud, new Color(.56f, .72f, 1f, .5f), 1, 8); Pad(hud, 3); hud.style.paddingLeft = 8;
             hl = Add(hud, L("")); hud.Add(Gap(10)); hc = Add(hud, L("", 16, ACC)); hud.Add(Gap(10)); hw = Add(hud, L("")); hud.Add(Gap(6));
             bgo = Add(hud, Btn("GO ▶", () => Battle.B.StartWave(), false, true));
             bsp = Add(hud, Btn(Battle.B.speed + "x", () => { var B = Battle.B; B.speed = B.speed == 1 ? 2 : B.speed == 2 ? 3 : 1; bsp.text = B.speed + "x"; }, true, true));
             bau = Add(hud, Btn("Auto: " + (Battle.B.auto ? "on" : "off"), () => { var B = Battle.B; B.auto = !B.auto; bau.text = "Auto: " + (B.auto ? "on" : "off"); if (B.auto) B.StartWave(); }, true, true));
             bwx = Add(hud, Btn("Weather", WeatherPanel, true, true));
+            bmt = Add(hud, Btn("Meter", () => { Save.G.meter = !Save.G.meter; Save.Write(); MeterShow(); }, !Save.G.meter, true));
             hud.Add(Btn("☰", PauseMenu, true, true));
-            // wave progress: how much of this wave is done
-            var wp = Add(hud, new VisualElement()); wp.style.height = 3; wp.style.width = new Length(100, LengthUnit.Percent); wp.style.backgroundColor = new Color(0, 0, 0, .35f); wp.style.marginTop = 2;
+            // wave progress: how much of this wave is done (a thin line under the one-row bar)
+            var wp = Add(hud, new VisualElement()); wp.style.height = 3; wp.style.position = Position.Absolute; wp.style.left = 8; wp.style.right = 8; wp.style.bottom = 1; wp.style.backgroundColor = new Color(0, 0, 0, .35f); hud.style.paddingBottom = 7;
             wprog = Add(wp, new VisualElement()); wprog.style.height = 3; wprog.style.backgroundColor = ACC;
             // boss bar across the top
             bossBar = Add(screen, new VisualElement()); bossBar.style.position = Position.Absolute; bossBar.style.top = 52; bossBar.style.left = new Length(25, LengthUnit.Percent); bossBar.style.width = new Length(50, LengthUnit.Percent);
@@ -642,8 +661,10 @@ namespace RouteDefense
             bottom.style.alignItems = Align.Center; bottom.pickingMode = PickingMode.Ignore;
             info = Add(bottom, new VisualElement()); info.style.backgroundColor = new Color(.1f, .21f, .5f, .92f); Edge(info, EDGE, 2, 8); Pad(info, 6); info.style.marginBottom = 4;
             info.style.maxWidth = new Length(96, LengthUnit.Percent); info.style.display = DisplayStyle.None;
-            teamBar = Add(bottom, Row()); teamBar.style.flexWrap = Wrap.Wrap; teamBar.style.justifyContent = Justify.Center; teamBar.style.maxWidth = new Length(98, LengthUnit.Percent);
-            teamBar.style.backgroundColor = new Color(.03f, .07f, .19f, .7f); Edge(teamBar, new Color(.56f, .72f, 1f, .4f), 1, 8); Pad(teamBar, 3);
+            teamSV = new ScrollView(ScrollViewMode.Horizontal); teamSV.horizontalScrollerVisibility = ScrollerVisibility.Hidden; teamSV.verticalScrollerVisibility = ScrollerVisibility.Hidden; teamSV.touchScrollBehavior = ScrollView.TouchScrollBehavior.Clamped; bottom.Add(teamSV);   // swipe sideways when the team is wider than the screen
+            teamSV.style.maxWidth = new Length(98, LengthUnit.Percent); teamSV.style.backgroundColor = new Color(.03f, .07f, .19f, .7f); Edge(teamSV, new Color(.56f, .72f, 1f, .4f), 1, 8); Pad(teamSV, 3);
+            teamBar = teamSV.contentContainer; teamBar.style.flexDirection = FlexDirection.Row;
+            bottomBox = bottom; meterBox = null; MeterShow();
             bannerWave = 0; ptrs.Clear(); pinch = false;
             stage.RegisterCallback<PointerDownEvent>(e => { stage.CapturePointer(e.pointerId); ptrs[e.pointerId] = e.position; if (ptrs.Count == 1) { downAt = e.position; panned = false; } Pointer(e.position, 1, e.pointerId, e.pointerType == "touch"); });
             stage.RegisterCallback<PointerMoveEvent>(e => Pointer(e.position, 0, e.pointerId, e.pointerType == "touch"));
@@ -731,7 +752,7 @@ namespace RouteDefense
             if (B.placing != null && B.sel == null)
             {
                 var sp = DB.SP[B.placing.id];
-                info.Add(L(sp.n + " - tap the map to place ($" + DB.PlaceCost(B.placing) + ")." + (sp.t.Contains(10) ? " Can stand in water." : sp.t.Contains(9) ? " Can stand in lava." : ""), 14));
+                info.Add(L(sp.n + " - tap the map to place ($" + DB.PlaceCost(B.placing) + "). " + string.Join(". ", Battle.Quirks(sp.id).Select(q => q[0] + ": " + q[1])) + "." + (sp.t.Contains(10) ? " Can stand in water." : sp.t.Contains(9) ? " Can stand in lava." : ""), 14));
                 info.style.display = DisplayStyle.Flex; return;
             }
             if (B.sel == null && B.selE != null && B.selE.hp > 0)
@@ -757,6 +778,7 @@ namespace RouteDefense
             var h = Add(info, Row(true)); h.Add(L(sp2.n + " Lv " + e.lv + " - " + t.kills + " KOs  ", 14)); h.Add(Types(sp2.t));
             var tg = new List<string>(); var why = Battle.SeesWhy(e); if (why != null) tg.Add("Sees hidden (" + why + ")"); if (A2 != null && DB.AB_TD.TryGetValue(A2.k, out var td) && !td.StartsWith("Wild")) tg.Add(A2.n); if (H != null) tg.Add(H.n);
             if (tg.Count > 0) h.Add(L("  " + string.Join(" - ", tg), 12, DIM));
+            foreach (var q in Battle.Quirks(e.id)) info.Add(L(q[0] + ": " + q[1], 12, Hex("#ffe39a")));
             int x0 = DB.XpFor(sp2.gr, e.lv), x1 = e.lv < DB.MAXLV ? DB.XpFor(sp2.gr, e.lv + 1) : e.xp; var xr = Add(info, Row());
             var xb = Add(xr, new VisualElement()); xb.style.height = 6; xb.style.width = 140; xb.style.backgroundColor = new Color(0, 0, 0, .4f); xb.style.marginRight = 8;
             var xf = Add(xb, new VisualElement()); xf.style.height = 6; xf.style.backgroundColor = Hex("#55ccff"); xf.style.width = new Length(e.lv >= DB.MAXLV ? 100 : Mathf.Clamp01((e.xp - x0) / (float)Mathf.Max(1, x1 - x0)) * 100, LengthUnit.Percent);
@@ -773,6 +795,8 @@ namespace RouteDefense
             foreach (var (k, n) in new[] { ("first", "First"), ("last", "Last"), ("strong", "Strong"), ("close", "Close") }) modes.Add(Btn(n, () => { t.mode = k; TowerInfo(); }, t.mode != k, true));
             modes.Add(Btn("Moves / Evolve" + (DB.EvoOptions(e).Any(o => o.ok) || e.pend.Count > 0 ? " ●" : ""), () => { B.paused = true; MonPanel(e, () => { if (Battle.B != null) Battle.B.paused = false; TowerInfo(); RefreshHud(); }); }, true, true));
             modes.Add(Btn("Recall ($" + (int)(t.paid * 0.7f) + ")", () => { B.Sell(t); TowerInfo(); RefreshHud(); }, true, true));
+            if (Battle.HasM(t, "Teleport")) modes.Add(Btn("Move (free)", () => { B.moving = t; B.swapping = null; Toast("Tap where it should go"); }, false, true));
+            if (Battle.HasM(t, "Ally Switch") && B.towers.Count > 1) modes.Add(Btn("Swap (free)", () => { B.swapping = t; B.moving = null; Toast("Tap a teammate to swap with"); }, false, true));
             info.style.display = DisplayStyle.Flex;
         }
         /* map input (panel coordinates): kind 0 move, 1 down, 2 up. Two fingers pinch to zoom, one finger drags a zoomed map,
@@ -795,6 +819,12 @@ namespace RouteDefense
             }
             Vector2 placeAt = touch ? panelPos - new Vector2(0, FINGER) : panelPos;
             var gp = ToGame(placeAt);
+            if (B.moving != null && kind == 2 && !panned)   // Teleport: free move to a new spot
+            {
+                var t = B.moving; B.moving = null; float ox = t.x, oy = t.y; t.x = t.y = -999;
+                if (B.CanPlace(t.e, gp.x, gp.y)) { t.x = gp.x; t.y = gp.y; t.tp = null; Gfx.Sfx("place"); } else { t.x = ox; t.y = oy; Toast("It can't go there"); }
+                TowerInfo(); return;
+            }
             if (B.placing != null)
             {
                 if (kind == 2 && panned) { View.ghostPos = null; return; }
@@ -816,6 +846,7 @@ namespace RouteDefense
             var g = ToGame(panelPos); float tr = touch ? 30 : 22;
             Tower best = null; float bd = tr;
             foreach (var t in B.towers) { float d = Vector2.Distance(new Vector2(t.x, t.y - 9), g); if (d < bd) { bd = d; best = t; } }
+            if (B.swapping != null) { var a = B.swapping; B.swapping = null; if (best != null && best != a) { (a.x, a.y, best.x, best.y) = (best.x, best.y, a.x, a.y); a.tp = best.tp = null; Gfx.Sfx("place"); } TowerInfo(); return; }   // Ally Switch
             B.sel = best; B.selE = null;
             if (best == null) { float ed = tr - 2; foreach (var e in B.en) { float d = Vector2.Distance(new Vector2(e.x, e.y - ((e.air ? 12 : 0) + 6) * Battle.ESPR), g); if (e.hp > 0 && d < ed) { ed = d; B.selE = e; } } }
             TowerInfo(); RefreshHud();
@@ -839,7 +870,10 @@ namespace RouteDefense
                 if (Battle.B.asks.Count > 0) AskJoin(); else if (Battle.B.over) ShowResult();
             }, true);
             var head = Add(p, Row()); head.Add(Icon(a.id, 64)); var hc2 = Add(head, new VisualElement()); hc2.style.flexShrink = 1;
-            hc2.Add(L(s.n + " wants to join your team!", 20)); var rr = Add(hc2, Row(true)); rr.Add(L("Lv " + a.lv + "  ")); rr.Add(Types(s.t));
+            hc2.Add(L(s.n + " wants to join your team!", 20)); var rr = Add(hc2, Row(true));
+            int owned = Save.G.box.Count(x => x.id == a.id);   // already have this species: a Poké Ball marker, like the main games' caught icon
+            if (owned > 0) { var ot = Add(rr, Row()); ot.style.backgroundColor = new Color(0, 0, 0, .4f); Edge(ot, Color.clear, 0, 9); ot.style.paddingRight = 6; ot.style.marginRight = 6; if (Gfx.Tex("Ui/pokeball") != null) ot.Add(UiImg("pokeball", 20)); ot.Add(L("Owned" + (owned > 1 ? " x" + owned : ""), 12, Hex("#ffe39a"))); }
+            rr.Add(L("Lv " + a.lv + "  ")); rr.Add(Types(s.t));
             if (a.nat != 0 && a.iv != null) hc2.Add(L(DB.NatLabel(a.nat) + " nature - IVs " + string.Join(" / ", a.iv) + " (total " + a.iv.Sum() + "/186)", 13, DIM));
             if (A != null) hc2.Add(L("Ability: " + A.n + (DB.AB_TD.TryGetValue(A.k, out var td) && !td.StartsWith("Wild") ? " - " + td : ""), 13, DIM));
             var mr = Add(hc2, Row(true)); foreach (int m in moves) { var tt = TypeTag(DB.Mv(m).t); tt.text = DB.Mv(m).n; mr.Add(tt); }
@@ -869,11 +903,86 @@ namespace RouteDefense
             if (B.recruits.Count > 0) { p.Add(L("Joined your team", 17)); var g = Add(p, Grid()); foreach (var e in B.recruits) g.Add(MonCard(e)); }
             p.Add(L("Team", 17)); var g2 = Add(p, Grid());
             foreach (var e in B.team) { var c = MonCard(e); c.Add(L("+" + (B.xpLog.TryGetValue(e.u, out var x) ? x : 0) + " XP", 12, DIM)); g2.Add(c); }
+            if (B.meter.Count > 0) { p.Add(L("Damage meter", 17)); var mb = Add(p, new VisualElement()); mb.style.backgroundColor = new Color(0, 0, 0, .2f); Pad(mb, 6); Edge(mb, Color.clear, 0, 8); meterOpen = 0; MeterDraw(mb, "dmg", true); }
             var r = Add(p, Row(true));
             r.Add(Btn("Same route, new layout", () => { ClosePanel(); routeSeed = UnityEngine.Random.Range(0, 1000000000); BeginBattle(); }));
             r.Add(Btn("Back to routes", () => { ClosePanel(); Battle.B = null; ShowHub("routes"); }, true));
         }
 
+        /* ---------- damage meter (Details!-style): Dmg / KO / Fx tabs, tap a row for its move breakdown, drag it anywhere ---------- */
+        static void MeterShow()
+        {
+            if (screen == null || !InBattle) return;
+            if (meterBox == null)
+            {
+                meterBox = Add(screen, new VisualElement()); meterBox.style.position = Position.Absolute; meterBox.style.width = 168; meterBox.style.backgroundColor = new Color(.03f, .07f, .19f, .72f);
+                Edge(meterBox, new Color(.87f, .92f, 1f, .5f), 1, 7); Pad(meterBox, 3); meterBox.style.right = 6; meterBox.style.top = 60;
+                Vector2 start = default, origin = default; int pid = -1; bool moved = false;
+                meterBox.RegisterCallback<PointerDownEvent>(e => { pid = e.pointerId; start = e.position; origin = new Vector2(meterBox.layout.x, meterBox.layout.y); moved = false; meterHold = true; }, TrickleDown.TrickleDown);
+                meterBox.RegisterCallback<PointerMoveEvent>(e =>
+                {
+                    if (e.pointerId != pid) return; var d = (Vector2)e.position - start;
+                    if (!moved && d.magnitude < 8) return; if (!moved) { moved = true; meterBox.CapturePointer(pid); }
+                    float W = Root.layout.width, H = Root.layout.height, x = Mathf.Clamp(origin.x + d.x, 0, Mathf.Max(0, W - meterBox.layout.width)), y = Mathf.Clamp(origin.y + d.y, 0, Mathf.Max(0, H - 40));
+                    meterBox.style.right = StyleKeyword.Auto; meterBox.style.left = x; meterBox.style.top = y; Save.G.mx = x / W; Save.G.my = y / H;
+                }, TrickleDown.TrickleDown);
+                meterBox.RegisterCallback<PointerUpEvent>(e => { if (e.pointerId != pid) return; if (moved) { meterBox.ReleasePointer(pid); Save.Write(); e.StopImmediatePropagation(); } pid = -1; meterBox.schedule.Execute(() => meterHold = false).StartingIn(60); }, TrickleDown.TrickleDown);
+            }
+            meterBox.style.display = Save.G.meter ? DisplayStyle.Flex : DisplayStyle.None;
+            if (Save.G.mx >= 0 && Root.layout.width > 0) { meterBox.style.right = StyleKeyword.Auto; meterBox.style.left = Save.G.mx * Root.layout.width; meterBox.style.top = Save.G.my * Root.layout.height; }
+            if (bmt != null) bmt.style.backgroundColor = Save.G.meter ? GREEN : ALT;
+            if (Save.G.meter) MeterDraw(meterBox, meterTab, false);
+        }
+        static string K(float v) => v >= 10000 ? (v / 1000f).ToString(v >= 100000 ? "0" : "0.0") + "k" : ((int)v).ToString("N0");
+        static void MeterDraw(VisualElement box, string tab, bool full)
+        {
+            var B = Battle.B; if (B == null) return; box.Clear();
+            var tabs = Add(box, Row());
+            foreach (var (k, n) in full ? new[] { ("dmg", "Damage"), ("ko", "Knockouts"), ("fx", "Effects") } : new[] { ("dmg", "Dmg"), ("ko", "KO"), ("fx", "Fx") })
+            { var b = Btn(n, () => { meterTab = k; meterOpen = 0; MeterDraw(box, k, full); }, k != tab, true); if (!full) { b.style.fontSize = 10; Pad(b, 0); b.style.paddingLeft = b.style.paddingRight = 4; b.style.marginTop = b.style.marginBottom = 1; } tabs.Add(b); }
+            var rows = B.meter.Values.Select(m => (m, e: Save.G.box.Find(x => x.u == m.u))).Where(r => r.e != null).ToList();
+            float tD = rows.Sum(r => r.m.dmg), tK = rows.Sum(r => r.m.ko), tC = rows.Sum(r => r.m.ctl), tO = rows.Sum(r => r.m.dot);
+            Func<MeterRow, float> val = r => tab == "dmg" ? r.dmg : tab == "ko" ? r.ko : (tC > 0 ? r.ctl / tC : 0) + (tO > 0 ? r.dot / tO : 0);
+            rows = rows.OrderByDescending(r => val(r.m)).ToList(); float max = rows.Count > 0 ? Mathf.Max(0.0001f, val(rows[0].m)) : 1, secs = Mathf.Max(1, B.time);
+            if (rows.Count == 0) { box.Add(L("Nothing yet - place a Pokémon and start a wave.", full ? 13 : 10, DIM)); return; }
+            int fs = full ? 14 : 10, isz = full ? 22 : 14, i = 0;
+            foreach (var (m, e) in rows)
+            {
+                i++; var row = Add(box, Row()); row.style.marginTop = row.style.marginBottom = 1; row.style.backgroundColor = new Color(0, 0, 0, .3f); Edge(row, Color.clear, 0, 3); row.style.overflow = Overflow.Hidden; row.style.paddingLeft = row.style.paddingRight = 3;
+                var bar = Add(row, new VisualElement()); bar.style.position = Position.Absolute; bar.style.left = 0; bar.style.top = 0; bar.style.bottom = 0; bar.style.width = new Length(Mathf.Max(2, val(m) / max * 100), LengthUnit.Percent);
+                var c = Hex(DB.TCOL[DB.SP[e.id].t[0]]); c.a = .45f; bar.style.backgroundColor = c; bar.pickingMode = PickingMode.Ignore;
+                row.Add(Icon(e.id, isz)); var nm = Add(row, L((full ? i + ". " : "") + DB.SP[e.id].n + (full && i == 1 && tab == "dmg" ? "  MVP" : ""), fs, full && i == 1 && tab == "dmg" ? ACC : Color.white)); nm.style.flexGrow = 1; nm.style.whiteSpace = WhiteSpace.NoWrap; nm.style.overflow = Overflow.Hidden;
+                int pct = Mathf.RoundToInt(tab == "dmg" ? m.dmg / Mathf.Max(1, tD) * 100 : m.ko / Mathf.Max(1, tK) * 100);
+                string txt = tab == "dmg" ? (full ? ((int)m.dmg).ToString("N0") + "  " + Mathf.RoundToInt(m.dmg / secs) + "/s  " : K(m.dmg) + " ") + pct + "%" : tab == "ko" ? m.ko + "  " + pct + "%" : Mathf.RoundToInt(m.ctl) + "s" + (m.dot > 0 ? "  " + K(m.dot) : "");
+                var v = Add(row, L(txt, fs)); v.style.whiteSpace = WhiteSpace.NoWrap;
+                int u = m.u; Click(row, () => { meterOpen = meterOpen == u ? 0 : u; MeterDraw(box, tab, full); });
+                if (meterOpen == u)
+                {
+                    var bd = Add(box, new VisualElement()); bd.style.paddingLeft = full ? 30 : 18;
+                    foreach (var kv in m.br.OrderByDescending(x => x.Value)) { var r2 = Add(bd, Row()); var a = Add(r2, L(kv.Key, fs - 2, DIM)); a.style.flexGrow = 1; r2.Add(L(((int)kv.Value).ToString("N0") + " (" + Mathf.RoundToInt(kv.Value / Mathf.Max(1, m.dmg) * 100) + "%)", fs - 2, DIM)); }
+                    var r3 = Add(bd, Row()); var a3 = Add(r3, L("Control", fs - 2, DIM)); a3.style.flexGrow = 1; r3.Add(L(Mathf.RoundToInt(m.ctl) + " s", fs - 2, DIM));
+                    var r4 = Add(bd, Row()); var a4 = Add(r4, L("Knockouts", fs - 2, DIM)); a4.style.flexGrow = 1; r4.Add(L(m.ko.ToString(), fs - 2, DIM));
+                }
+            }
+            if (full) box.Add(L(tab == "dmg" ? "Team: " + ((int)tD).ToString("N0") + " damage" : tab == "ko" ? "Team: " + (int)tK + " knockouts" : "Control = seconds enemies spent stopped or slowed (stronger slows count more)", 12, DIM));
+        }
+        /* map under the one-row top bar, the team row right under the map, the bar shrinking to fit */
+        static void BattleLayout()
+        {
+            if (hud == null || hud.layout.width <= 0 || Root.layout.width <= 0) return;
+            float W = Root.layout.width, need = hud.layout.width, k = need > W - 12 ? (W - 12) / need : 1;
+            hud.style.scale = new Scale(new Vector3(k, k, 1));
+            float top = hud.layout.y + hud.layout.height * k + 4, teamH = teamSV != null ? teamSV.layout.height + 10 : 0;
+            stage.style.top = top; stage.style.bottom = teamH; stage.style.height = StyleKeyword.Auto;
+            if (bossBar != null) bossBar.style.top = top + 2;
+            // the team row sits right under the map (the camera shows exactly the map, top-aligned in the stage)
+            var mr = View.MapRectPanel(W, Root.layout.height); float y = mr.yMax + 4;
+            if (bottomBox != null && mr.height > 0)
+            {
+                float infoH = info != null && info.style.display == DisplayStyle.Flex ? info.layout.height + 4 : 0;
+                bottomBox.style.bottom = StyleKeyword.Auto; bottomBox.style.top = Mathf.Min(y - infoH, Root.layout.height - teamH - infoH);
+            }
+        }
         /* ---------- per frame ---------- */
         static bool lastPortrait; static Vector2Int lastSize;
         public static void Tick(float dt)
@@ -901,6 +1010,8 @@ namespace RouteDefense
                 BuildBattle();
             }
             if (B.asks.Count > 0 && !ModalOpen) AskJoin();
+            BattleLayout();
+            meterT -= dt; if (meterT <= 0 && Save.G.meter && meterBox != null && !meterHold) { meterT = 0.5f; MeterDraw(meterBox, meterTab, false); }
             hudT -= dt;
             if (hudT <= 0)
             {

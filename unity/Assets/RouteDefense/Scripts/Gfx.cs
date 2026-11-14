@@ -1,4 +1,5 @@
 // Route Defense — textures, sprites and sound. Everything is loaded from Resources (1 world unit = 1 game pixel).
+using System.Linq;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -67,7 +68,8 @@ namespace RouteDefense
             if (misc.TryGetValue(k, out var s)) return s;
             var t = Tex("Fx/" + a.f); if (t == null) return null;
             int r = a.r > 1 ? row : 0;
-            s = Sprite.Create(t, new Rect(frame * a.fw, t.height - (r + 1) * a.fh, a.fw, a.fh), new Vector2(0.5f, 0.5f), 1f, 0, SpriteMeshType.FullRect);
+            var piv = a.ox >= 0 ? new Vector2(a.ox / a.fw, 1 - a.oy / a.fh) : new Vector2(0.5f, 0.5f);   // Explorers of Sky sheets carry their anchor point; Red's are centred
+            s = Sprite.Create(t, new Rect(frame * a.fw, t.height - (r + 1) * a.fh, a.fw, a.fh), piv, 1f, 0, SpriteMeshType.FullRect);
             misc[k] = s; return s;
         }
         /* one frame of a PMD weather screen (sheets are frames left to right, rows top to bottom) */
@@ -178,5 +180,10 @@ namespace RouteDefense
             last[key] = Time.unscaledTime;
             var c = Resources.Load<AudioClip>("Snd/" + f); if (c != null) sfx.PlayOneShot(c);
         }
+    }
+    public static class FxKeys
+    {
+        /* Explorers of Sky uses the same effect file numbers as Red, drawn the same way round: add an "eosNNN/animMM" twin for every "efobNNN/animMM" key */
+        public static Dictionary<string, float> WithEos(this Dictionary<string, float> d) { foreach (var k in d.Keys.ToList()) if (k.StartsWith("efob")) d["eos" + k.Substring(4)] = d[k]; return d; }
     }
 }
