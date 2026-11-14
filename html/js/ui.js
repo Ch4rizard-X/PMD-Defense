@@ -508,15 +508,16 @@ function meterRows(tab) {
 function meterHTML(box, tab, full) {
   const { rows, tot, val } = meterRows(tab), max = rows.length ? val(rows[0]) || 1 : 1, secs = Math.max(1, B.mtime || B.time || 1);
   box.innerHTML = '';
-  const tabs = el('div', 'mtabs'); for (const [k, n] of [['dmg', 'Damage'], ['ko', 'Knockouts'], ['fx', 'Effects']]) { const b = el('button', 'sm' + (k === tab ? '' : ' alt'), n); b.onclick = ev => { ev.stopPropagation(); MET.tab = k; MET.open = null; meterHTML(box, k, full); }; tabs.appendChild(b); }
+  const tabs = el('div', 'mtabs'); for (const [k, n] of full ? [['dmg', 'Damage'], ['ko', 'Knockouts'], ['fx', 'Effects']] : [['dmg', 'Dmg'], ['ko', 'KO'], ['fx', 'Fx']]) { const b = el('button', 'sm' + (k === tab ? '' : ' alt'), n); b.onclick = ev => { ev.stopPropagation(); MET.tab = k; MET.open = null; meterHTML(box, k, full); }; tabs.appendChild(b); }
   box.appendChild(tabs);
   if (!rows.length) { box.appendChild(el('div', 'hint', 'Nothing yet - place a Pokémon and start a wave.')); return; }
   rows.forEach((r, i) => {
     const pct = tab === 'dmg' ? Math.round(r.dmg / Math.max(1, tot.dmg) * 100) : tab === 'ko' ? Math.round(r.ko / Math.max(1, tot.ko) * 100) : 0;
-    const txt = tab === 'dmg' ? `<b>${r.dmg.toLocaleString()}</b> ${Math.round(r.dmg / secs)}/s ${pct}%` : tab === 'ko' ? `<b>${r.ko}</b> ${pct}%` : `<b>${Math.round(r.ctl)} s</b> control ${r.dot ? '- ' + r.dot.toLocaleString() + ' over time' : ''}`;
+    const k = v => !full && v >= 10000 ? (v / 1000).toFixed(v >= 100000 ? 0 : 1) + 'k' : v.toLocaleString();
+    const txt = !full && tab === 'dmg' ? `<b>${k(r.dmg)}</b> ${pct}%` : !full && tab === 'fx' ? `<b>${Math.round(r.ctl)}s</b>${r.dot ? ' ' + k(r.dot) : ''}` : tab === 'dmg' ? `<b>${r.dmg.toLocaleString()}</b> ${Math.round(r.dmg / secs)}/s ${pct}%` : tab === 'ko' ? `<b>${r.ko}</b> ${pct}%` : `<b>${Math.round(r.ctl)} s</b> control ${r.dot ? '- ' + r.dot.toLocaleString() + ' over time' : ''}`;
     const row = el('div', 'mrow'); const c = TCOL[SP[r.e.id].t[0]];
     row.innerHTML = `<i class="mbar" style="width:${Math.max(2, val(r) / max * 100)}%;background:${c}"></i>`;
-    row.appendChild(trimIcon(r.e.id, 22)); row.appendChild(el('span', 'mnm', `${i + 1}. ${SP[r.e.id].n}${full && i === 0 && tab === 'dmg' ? ' <span class="mvp">MVP</span>' : ''}`)); row.appendChild(el('span', 'mv2', txt));
+    row.appendChild(trimIcon(r.e.id, full ? 22 : 14)); row.appendChild(el('span', 'mnm', `${full ? (i + 1) + '. ' : ''}${SP[r.e.id].n}${full && i === 0 && tab === 'dmg' ? ' <span class="mvp">MVP</span>' : ''}`)); row.appendChild(el('span', 'mv2', txt));
     row.onclick = ev => { ev.stopPropagation(); MET.open = MET.open === r.u ? null : r.u; meterHTML(box, tab, full); };
     box.appendChild(row);
     if (MET.open === r.u) { const bd = el('div', 'mbd'); const br = Object.entries(r.br).sort((a, b) => b[1] - a[1]);

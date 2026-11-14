@@ -212,6 +212,10 @@ button.upd { margin-top: 8px; background: linear-gradient(#3fa34d, #23722f); bor
 .mvp { font-size: 10px; padding: 0 4px; border-radius: 4px; background: #ffd84a; color: #3a2a00; text-shadow: none; }
 .mbd { font-size: 11px; padding: 2px 6px 4px 30px; opacity: .9; } .mbd div { display: flex; justify-content: space-between; gap: 8px; }
 .mres { background: #0003; border-radius: 8px; padding: 6px; margin-bottom: 8px; }
+#meter { width: min(168px, 44vw); padding: 3px; font-size: 10px; border-width: 1px; border-radius: 7px; background: rgba(8,19,48,.72); box-shadow: 0 0 0 1px #0a1a4a; }   /* compact in battle */
+#meter .mtabs { gap: 2px; margin-bottom: 2px; } #meter .mtabs button { padding: 0 4px; font-size: 10px; min-height: 0; line-height: 15px; border-width: 1px; }
+#meter .mrow { gap: 3px; padding: 0 3px; margin: 1px 0; border-radius: 3px; min-height: 15px; } #meter .mrow canvas, #meter .mrow img, #meter .mrow .mic { width: 14px !important; height: 14px !important; }
+#meter .mv2, #meter .mv2 b { font-size: 10px; } #meter .mbd { font-size: 9px; padding-left: 18px; } #meter > .hint { display: none; }
 </style>
 </head>
 <body>
