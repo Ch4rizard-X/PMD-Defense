@@ -53,6 +53,7 @@ let PANEL_CB = null;
 function panel(html, onClose, sticky) {
   const p = $('#modal'); p.innerHTML = ''; PANEL_CB = onClose || null;
   const box = el('div', 'win'); if (typeof html === 'string') box.innerHTML = html; else box.appendChild(html);
+  if (!sticky) { const x = el('button', 'wclose alt', 'X'); x.title = 'Close'; x.onclick = ev => { ev.stopPropagation(); sfx('tap'); closePanel(); }; p.appendChild(x); }   // always-visible way out: on the overlay (panels that redraw their contents can't wipe it)
   p.appendChild(box); p.classList.add('on'); p.onclick = e => { if (e.target === p && !sticky) closePanel(); }; return box;
 }
 function closePanel() { const cb = PANEL_CB; PANEL_CB = null; $('#modal').classList.remove('on'); if (cb) cb(); }
