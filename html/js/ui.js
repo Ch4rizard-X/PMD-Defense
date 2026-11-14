@@ -12,11 +12,15 @@ function typeTag(t) { return `<span class="ty" style="background:${TCOL[t]}">${T
 
 /* small sprite icon: first Idle frame, facing down */
 /* a Pokémon's idle animation playing in a small canvas (stops when removed from the page) */
+/* Battery saver (default on): 30 fps and the battle drawn at the pixel art's own resolution; "Smooth" = 60 fps at full screen resolution */
+const SMOOTH = () => !!(G && G.opts && G.opts.smooth);
+const FPS = () => SMOOTH() ? 60 : 30;
+function gate(now, st, fps) { if (now - (st.l || 0) < 1000 / (fps || FPS()) - 3) return false; st.l = now; return true; }
 function animIcon(id, size) {
   const A = DB.anim[id], a = A && (A.Idle || A.Walk); if (!a) return icon(id, size);
   const c = el('canvas', 'ic aic'), w = Math.min(a.fw, 64), h = Math.min(a.fh, 64); c.width = w; c.height = h; c.style.width = size + 'px'; c.style.height = size * h / w + 'px';
   const g = c.getContext('2d'), t0 = performance.now();
-  const step = now => { if (!c.isConnected && now - t0 > 500) return; g.clearRect(0, 0, w, h); g.imageSmoothingEnabled = false; const gp = a.sh ? a.sh[0] : [a.fw / 2, a.fh / 2 + 4]; drawMon(g, id, A.Idle ? 'Idle' : 'Walk', (now - t0) / 1000, 0, w / 2 + (gp[0] - a.fw / 2), h / 2 + (gp[1] - a.fh / 2), null, true, 1); requestAnimationFrame(step); };
+  const gs = {}; const step = now => { if (!c.isConnected && now - t0 > 500) return; if (!gate(now, gs)) { requestAnimationFrame(step); return; } g.clearRect(0, 0, w, h); g.imageSmoothingEnabled = false; const gp = a.sh ? a.sh[0] : [a.fw / 2, a.fh / 2 + 4]; drawMon(g, id, A.Idle ? 'Idle' : 'Walk', (now - t0) / 1000, 0, w / 2 + (gp[0] - a.fw / 2), h / 2 + (gp[1] - a.fh / 2), null, true, 1); requestAnimationFrame(step); };
   requestAnimationFrame(step); return c;
 }
 /* icon cropped to the Pokémon itself (no empty frame around small ones), fitted into a size x size box */
@@ -102,14 +106,15 @@ function fitTitle() {   // biggest whole-number scale of the 240x160 picture tha
 }
 /* floating light motes over the title (simple shapes, no art) */
 function titleMotes(t) {
-  const cv = t.querySelector('.motes'), g = cv.getContext('2d'), P = [];
-  const step = () => {
+  const cv = t.querySelector('.motes'), g = cv.getContext('2d'), P = [], gs = {}; let ml = performance.now();
+  const step = nowMs => {
     if (UI.screen !== 'title' || !cv.isConnected) return;
+    if (!gate(nowMs, gs)) { requestAnimationFrame(step); return; } const mdt = Math.min(0.1, (nowMs - ml) / 1000); ml = nowMs;
     if (cv.width !== innerWidth || cv.height !== innerHeight) { cv.width = innerWidth; cv.height = innerHeight; }
     g.clearRect(0, 0, cv.width, cv.height);
     while (P.length < 40) P.push({ x: Math.random() * cv.width, y: cv.height + Math.random() * cv.height, r: 1 + Math.random() * 2.5, v: 10 + Math.random() * 25, ph: Math.random() * 6.3 });
     const now = performance.now() / 1000;
-    for (const p of P) { p.y -= p.v / 60; const a = 0.25 + 0.25 * Math.sin(now * 2 + p.ph); g.fillStyle = `rgba(255,240,170,${a})`; g.beginPath(); g.arc(p.x + Math.sin(now + p.ph) * 12, p.y, p.r, 0, 7); g.fill(); if (p.y < -10) { p.y = cv.height + 10; p.x = Math.random() * cv.width; } }
+    for (const p of P) { p.y -= p.v * mdt; const a = 0.25 + 0.25 * Math.sin(now * 2 + p.ph); g.fillStyle = `rgba(255,240,170,${a})`; g.beginPath(); g.arc(p.x + Math.sin(now + p.ph) * 12, p.y, p.r, 0, 7); g.fill(); if (p.y < -10) { p.y = cv.height + 10; p.x = Math.random() * cv.width; } }
     requestAnimationFrame(step);
   };
   requestAnimationFrame(step);
@@ -117,9 +122,10 @@ function titleMotes(t) {
 function titleWalkers(t) {
   const cv = el('canvas', 'walk'); t.appendChild(cv); const g = cv.getContext('2d');
   const pool = DB.dex.mon.filter(m => m.anim && DB.anim[m.id].Walk && m.g <= 3), walkers = [];
-  let last = performance.now();
+  let last = performance.now(); const gs = {};
   const step = now => {
     if (UI.screen !== 'title' || !cv.isConnected) return;
+    if (!gate(now, gs)) { requestAnimationFrame(step); return; }
     const dt = Math.min(0.05, (now - last) / 1000); last = now;
     const k = Math.max(2, Math.round(innerHeight / 330)); cv.style.height = 60 * k + 'px'; cv.width = Math.floor(cv.clientWidth / k); cv.height = 60; g.imageSmoothingEnabled = false;
     if (walkers.length < 4 && Math.random() < dt * 0.6) { const m = pool[Math.floor(Math.random() * pool.length)], right = Math.random() < 0.5; walkers.push({ id: m.id, x: right ? -30 : cv.width + 30, v: (right ? 1 : -1) * (14 + m.b[5] * 0.12), t: 0 }); }
@@ -623,6 +629,8 @@ function optionsPanel(after) {
   const b = panel('<h3>Options</h3>', after);
   const render = () => {
     b.innerHTML = '<h3>Options</h3>';
+    const bs = el('div', 'move', '<b>Battery saver</b> <span class="hint">30 fps and lighter drawing, so the phone stays cooler</span>'); const bb = el('button', 'sm' + (SMOOTH() ? ' alt' : ''), SMOOTH() ? 'Off (smooth)' : 'On');
+    bb.onclick = () => { G.opts.smooth = !G.opts.smooth; save(); if (B && UI.screen === 'battle') layout(); render(); }; bs.appendChild(bb); b.appendChild(bs);
     const s = el('div', 'move', '<b>Sound</b>'); const sb = el('button', 'sm' + (G.opts.mute ? ' alt' : ''), G.opts.mute ? 'Off' : 'On');
     sb.onclick = () => { G.opts.mute = !G.opts.mute; if (G.opts.mute && SND.music) SND.music.pause(); else { SND.cur = ''; playMusic(UI.screen === 'battle' ? DB.ts[B.set].name : '_hub'); } save(); render(); };
     s.appendChild(sb); b.appendChild(s);
@@ -740,7 +748,12 @@ function layout() {
     for (const t of keepT) { [t.x, t.y] = [t.y, t.x]; }
     for (const e of B.en) { const [x, y] = pathAt(B.M, Math.max(0, e.d)); e.x = x; e.y = y; }
   }
-  const area = $('#stage'), r = area.getBoundingClientRect(), dpr = Math.min(2, devicePixelRatio || 1);
+  const area = $('#stage'), r = area.getBoundingClientRect();
+  let dpr = Math.min(2, devicePixelRatio || 1);
+  if (!SMOOTH()) {   // draw at the art's own resolution: one canvas pixel per art pixel is all the detail there is
+    const hudC = hudInset(), botC = teamInset(), artPerCss = Math.min(r.width / (B.M.W * TZ), Math.max(1, r.height - hudC - botC) / (B.M.H * TZ)) * (UI.zoom || 1);
+    dpr = clamp(1 / Math.max(0.01, artPerCss), 1, dpr);
+  }
   CV.width = Math.floor(r.width * dpr); CV.height = Math.floor(r.height * dpr); CV.style.width = r.width + 'px'; CV.style.height = r.height + 'px';
   fitHud();
   const top = Math.min(CV.height * 0.4, hudInset() * dpr), bot = Math.min(CV.height * 0.3, teamInset() * dpr), ah = CV.height - top - bot, my = top + ah / 2;   // play area: under the top bar, above the team row
@@ -850,7 +863,10 @@ function showResult() {
 
 /* ---------- main loop ---------- */
 let lastT = 0, hudT = 0;
+const FRMG = {};
 function frame(ts) {
+  const idle = !B || B.paused || UI.screen !== 'battle' || $('#modal').classList.contains('on');
+  if (!gate(ts, FRMG, idle ? 8 : FPS())) { requestAnimationFrame(frame); return; }   // battery: skip frames
   const dt = Math.min(0.05, (ts - lastT) / 1000 || 0); lastT = ts;
   if (UI.screen === 'battle' && B) {
     tick(dt);
@@ -860,8 +876,7 @@ function frame(ts) {
     CX.save(); CX.beginPath(); CX.rect(0, 0, B.M.W * TZ, B.M.H * TZ); CX.clip();   // nothing is drawn outside the map (walkers entering, flyers hovering above the edge)
     drawBattle(CX); CX.restore();
     CX.setTransform(1, 0, 0, 1, 0, 0);   // soft vignette so the floating HUD sits on darker edges
-    if (!UI.vg || UI.vg.w !== CV.width || UI.vg.h !== CV.height) { const v = CX.createRadialGradient(CV.width / 2, CV.height / 2, Math.min(CV.width, CV.height) * 0.45, CV.width / 2, CV.height / 2, Math.hypot(CV.width, CV.height) * 0.6); v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(0,0,10,.38)'); UI.vg = { g: v, w: CV.width, h: CV.height }; }
-    CX.fillStyle = UI.vg.g; CX.fillRect(0, 0, CV.width, CV.height);
+    if (false) { const v = CX.createRadialGradient(CV.width / 2, CV.height / 2, Math.min(CV.width, CV.height) * 0.45, CV.width / 2, CV.height / 2, Math.hypot(CV.width, CV.height) * 0.6); v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(0,0,10,.38)'); UI.vg = { g: v, w: CV.width, h: CV.height }; }
     hudT -= dt; if (hudT <= 0) { hudT = 0.15; refreshHud(); if (B.sel) { const k = B.sel.e.lv + ':' + B.sel.kills + ':' + B.sel.e.id + ':' + B.sel.up.join('') + ':' + [0, 1, 2].map(i => +(B.cash >= upgradeCost(B.sel, i))).join(''); if (UI.tk !== k) { UI.tk = k; towerInfo(); } } else if (B.selE) towerInfo(); }
   }
   requestAnimationFrame(frame);
