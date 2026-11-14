@@ -525,10 +525,30 @@ function meterHTML(box, tab, full) {
   });
   box.appendChild(el('div', 'hint', tab === 'dmg' ? `Team: ${tot.dmg.toLocaleString()} damage` : tab === 'ko' ? `Team: ${tot.ko} knockouts` : 'Control = seconds enemies spent stopped or slowed (stronger slows count more)'));
 }
+/* drag the meter anywhere (a short tap still works on its tabs and rows); the spot is saved as a share of the screen */
+function meterPlace() {
+  const m = $('#meter'), P = G.opts.meterPos; if (!m || !P) return;
+  const w = m.offsetWidth * (parseFloat(getComputedStyle(m).zoom) || 1), h = m.offsetHeight * (parseFloat(getComputedStyle(m).zoom) || 1);
+  m.style.right = 'auto'; m.style.left = clamp(P[0] * innerWidth, 0, Math.max(0, innerWidth - w)) + 'px'; m.style.top = clamp(P[1] * innerHeight, 0, Math.max(0, innerHeight - Math.min(h, 60))) + 'px';
+}
+function meterDrag(m) {
+  let d = null;
+  m.addEventListener('pointerdown', ev => { const r = m.getBoundingClientRect(); d = { id: ev.pointerId, sx: ev.clientX, sy: ev.clientY, ox: r.left, oy: r.top, moved: false }; MET.hold = true; });
+  addEventListener('pointermove', ev => {
+    if (!d || ev.pointerId !== d.id) return; const dx = ev.clientX - d.sx, dy = ev.clientY - d.sy;
+    if (!d.moved && Math.hypot(dx, dy) < 8) return;
+    if (!d.moved) { d.moved = true; m.classList.add('drag'); }
+    G.opts.meterPos = [(d.ox + dx) / innerWidth, (d.oy + dy) / innerHeight]; meterPlace(); ev.preventDefault();
+  }, { passive: false });
+  const up = ev => { if (!d || ev.pointerId !== d.id) return; const moved = d.moved; d = null; setTimeout(() => { MET.hold = false; }, 60);
+    if (moved) { save(); m.classList.remove('drag'); const stop = e => { e.stopPropagation(); e.preventDefault(); }; m.addEventListener('click', stop, { capture: true, once: true }); setTimeout(() => m.removeEventListener('click', stop, { capture: true }), 60); } };
+  addEventListener('pointerup', up); addEventListener('pointercancel', up);
+}
 function meterShow() {
-  let m = $('#meter'); if (!m) { m = el('div', ''); m.id = 'meter'; $('#battle').appendChild(m); }
+  let m = $('#meter'); if (!m) { m = el('div', ''); m.id = 'meter'; $('#battle').appendChild(m); meterDrag(m); }
+  meterPlace();
   m.style.display = G.opts.meter ? 'block' : 'none'; const b = $('#bmt'); if (b) b.classList.toggle('alt', !G.opts.meter);
-  clearInterval(UI.mtimer); if (G.opts.meter) { const draw = () => { if (B && $('#meter') && UI.screen === 'battle') meterHTML($('#meter'), MET.tab, false); }; draw(); UI.mtimer = setInterval(draw, 500); }
+  clearInterval(UI.mtimer); if (G.opts.meter) { const draw = () => { if (B && $('#meter') && UI.screen === 'battle' && !MET.hold) meterHTML($('#meter'), MET.tab, false); }; draw(); UI.mtimer = setInterval(draw, 500); }
 }
 /* ---------- team (max 10) ---------- */
 function showTeam() {
@@ -731,7 +751,7 @@ function layout() {
     const tb = $('#teambar'), y = (top + Math.min(mh * s0, ah)) / dpr + 4;
     if (tb) { tb.style.top = y + 'px'; tb.style.bottom = 'auto'; }
     const ti = $('#tinfo'); if (ti && tb) ti.style.bottom = (innerHeight - y + 6) + 'px';
-    const me = $('#meter'); if (me) { me.style.top = (top / dpr + 4) + 'px'; me.style.maxHeight = Math.max(120, y - top / dpr - 12) + 'px'; }
+    const me = $('#meter'); if (me) { me.style.maxHeight = Math.max(120, y - top / dpr - 12) + 'px'; if (G.opts.meterPos) meterPlace(); else me.style.top = (top / dpr + 4) + 'px'; }
   }
   UI.zc = [(CV.width / 2 - VIEW.ox) / s, (my - VIEW.oy) / s];
 }
