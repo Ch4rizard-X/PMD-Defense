@@ -103,6 +103,7 @@ function moveDesc(id) {
   if (m.a) s += ` - Acc ${m.a}`;
   s += ` - PP ${m.pp}`;
   if (!u) s += ' - (no use in battle)';
+  if (id === 206) s += ' - Knockouts with it are 3x as likely to ask to join';
   return s;
 }
 function moveValue(id, sp) {      // rough worth of a move for a tower, used to pick starting moves

@@ -334,7 +334,7 @@ function applyMove(t, m, e, st) {
       if (e.sts === 'freeze' && M.t === 9) { e.sts = null; e.stop = 0; }
     }
     if (ek === 'sturdy' && !e.sturdy && e.hp >= e.max && dmg >= e.hp) { dmg = e.hp - 1; e.sturdy = 1; }
-    hurt(t, e, dmg); quirkHit(t, e, dmg);
+    e.fs = m === 206; hurt(t, e, dmg); e.fs = false; quirkHit(t, e, dmg);   // False Swipe: a knockout by it is 3x as likely to ask to join
     if (e.hp > 0 && M.ai !== 'none' && AILMENTS.includes(M.ai) && chance(M.ac || 0)) inflict(e, M.ai, t);
     if (e.hp > 0 && (M.fl && chance(M.fl) || (!M.fl && (hk === 'kings-rock' || hk === 'razor-fang') && rnd() < 0.1))) e.stop = Math.max(e.stop, 0.35);
     if (e.hp > 0 && M.sc.length && M.tg !== 7 && chance(M.sch || 0)) debuff(e, M.sc, t);
@@ -400,7 +400,7 @@ function ko(t, e) {
     // recruiting: knocked-out wild Pokémon sometimes ask to join (only species you don't have yet)
     // you choose whether to take it, like the original; duplicates allowed; a declined species stops asking for the rest of this battle
     if (sp.anim && !B.declined.has(e.id) && !B.asks.some(a => a.id === e.id)) {
-      const p = (e.boss ? 0.04 + mod('bossRecruit') : 0.005 * (sp.cr / 255) * (1 + B.th * 0.05) * (1 - 0.5 * clamp((B.th - 4) / 5, 0, 1)))   /* halved from tier 9 up */ * (1 + mod('recruit'));
+      const p = (e.boss ? 0.04 + mod('bossRecruit') : 0.005 * (sp.cr / 255) * (1 + B.th * 0.05) * (1 - 0.5 * clamp((B.th - 4) / 5, 0, 1)))   /* halved from tier 9 up */ * (1 + mod('recruit')) * (e.fs ? 3 : 1);
       if (rnd() < p) { B.asks.push({ id: e.id, lv: e.lv, ab: e.ab, nat: e.nat, iv: e.iv }); sfx('join'); if (typeof askJoin === 'function') askJoin(); }
     }
   }
