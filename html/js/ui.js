@@ -648,7 +648,9 @@ function askJoin() {
   B.paused = true;
   const box = panel('', () => { if (!B) return; B.paused = false; if (B.asks.length) setTimeout(askJoin, 50); else if (B.afterAsks) { const f = B.afterAsks; B.afterAsks = null; f(); } }, true);
   const head = el('div', 'mhead'); head.appendChild(icon(a.id, 64));
-  head.appendChild(el('div', '', `<h3>${s.n} wants to join your team!</h3><div>Lv ${a.lv} ${s.t.map(typeTag).join('')}</div>
+  const owned = G.box.filter(x => x.id === a.id).length;   // already have this species: a Poké Ball marker, like the main games' caught icon
+  const ownTag = owned ? `<span class="owned" title="You already have ${owned}"><img src="${asset('img/ui/pokeball.png')}" alt="" onerror="this.remove()">Owned${owned > 1 ? ' x' + owned : ''}</span>` : '';
+  head.appendChild(el('div', '', `<h3>${s.n} wants to join your team!</h3><div>${ownTag}Lv ${a.lv} ${s.t.map(typeTag).join('')}</div>
     <div class="hint">${natLabel(a.nat)} nature - IVs ${a.iv.join(' / ')} (total ${a.iv.reduce((x, y) => x + y, 0)}/186)</div>
     <div class="hint">${A ? 'Ability: ' + A.n + (AB_TD[A.k] && !AB_TD[A.k].startsWith('Wild') ? ' - ' + AB_TD[A.k] : '') : ''}</div>
     <div class="mvs">${moves.map(m => `<span class="ty" style="background:${TCOL[mv(m).t]}">${mv(m).n}</span>`).join('')}</div>

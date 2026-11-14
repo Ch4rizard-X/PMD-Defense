@@ -15,7 +15,9 @@ js=''.join(open(W+f'js/{n}.js').read()+'\n' for n in ['core','map','battle','ui'
 #     data = fingerprint of the data + graphics this code was built with (an update only installs onto a matching app).
 import hashlib
 style=html[html.index('>',html.index('<style'))+1:html.index('</style>')]
-assets=sorted((os.path.relpath(os.path.join(r,f),W),os.path.getsize(os.path.join(r,f))) for r,_,fs in os.walk(W) for f in fs if os.path.splitext(f)[1] in mime)
+# optional pictures: the code hides them when missing, so an older app can still take a code update without them
+OPTIONAL={'img/ui/pokeball.png'}
+assets=sorted((os.path.relpath(os.path.join(r,f),W),os.path.getsize(os.path.join(r,f))) for r,_,fs in os.walk(W) for f in fs if os.path.splitext(f)[1] in mime and os.path.relpath(os.path.join(r,f),W) not in OPTIONAL)
 dh=hashlib.md5((json.dumps(D,sort_keys=True)+json.dumps(assets)).encode()).hexdigest()[:10]
 ch=hashlib.md5((js+style).encode()).hexdigest()[:10]
 VF=W+'version.json'; V=json.load(open(VF)) if os.path.exists(VF) else {'v':0}
