@@ -14,6 +14,11 @@ namespace RouteDefense
         {
             if (tex.TryGetValue(path, out var t)) return t;
             t = Resources.Load<Texture2D>(path);
+            if (t == null)   // sprite sheets are kept as their PNG files (.bytes) so the APK stays small; decoded on first use, pixel-perfect
+            {
+                var raw = Resources.Load<TextAsset>(path);
+                if (raw != null) { t = new Texture2D(2, 2, TextureFormat.RGBA32, false); t.LoadImage(raw.bytes, false); Resources.UnloadAsset(raw); }
+            }
             if (t != null) { t.filterMode = FilterMode.Point; t.wrapMode = TextureWrapMode.Clamp; }
             tex[path] = t; return t;
         }

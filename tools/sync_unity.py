@@ -18,10 +18,12 @@ for f in ('dmg_r.png', 'dmg_b.png'): copy(W + 'img/' + f, U + 'Resources/Ui/' + 
 for f in os.listdir(W + 'snd'): copy(W + 'snd/' + f, U + 'Resources/Snd/' + f)
 for f in os.listdir(W + 'img/item'): copy(W + 'img/item/' + f, U + 'Resources/Items/' + f)
 for f in os.listdir(W + 'img/wx'): copy(W + 'img/wx/' + f, U + 'Resources/Wx/' + f)
-for f in os.listdir(W + 'img/mon'):          # WebP sheets -> PNG, only when the WebP is newer
-    src = W + 'img/mon/' + f; dst = U + 'Resources/Mon/' + f.replace('.webp', '.png')
+for f in os.listdir(W + 'img/mon'):          # WebP sheets -> PNG bytes, only when the WebP is newer
+    # saved as .bytes (the PNG file itself): Unity keeps it as-is in the APK and the game decodes it on first use.
+    # As textures, Unity stored them uncompressed and the APK passed Android's 4 GB limit.
+    src = W + 'img/mon/' + f; dst = U + 'Resources/Mon/' + f.replace('.webp', '.bytes')
     if not os.path.exists(dst) or os.path.getmtime(src) > os.path.getmtime(dst):
-        Image.open(src).save(dst, optimize=True); changed.append(dst)
+        Image.open(src).save(dst, format='PNG', optimize=True); changed.append(dst)
 if changed:
     with zipfile.ZipFile(OUT, 'w', zipfile.ZIP_DEFLATED) as z:
         for p in changed: z.write(p, os.path.relpath(p, U))
