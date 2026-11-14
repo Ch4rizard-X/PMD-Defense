@@ -14,3 +14,9 @@ html/img/
 html/snd/
 html/data/
 dist/
+
+# Android signing key: never in the public repo
+android/keys/
+*.pem
+*.der
+*.apk
