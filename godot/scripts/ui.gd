@@ -38,7 +38,7 @@ func show_screen(name: String) -> Control:
 	scr = Control.new(); scr.set_anchors_preset(Control.PRESET_FULL_RECT); add_child(scr); move_child(scr, 0)
 	return scr
 func art_bg(c: Control, i: int) -> void:   # the ROM artwork, darkened, behind the menus
-	var t := K.img("img/ui/art%d.png" % i, 0, 0); t.set_anchors_preset(Control.PRESET_FULL_RECT); t.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED; c.add_child(t)
+	var t := K.img("img/ui/art%d.png" % i, 0, 0); t.set_anchors_preset(Control.PRESET_FULL_RECT); t.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED; t.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR; c.add_child(t)   # soft, like the HTML's background
 	var d := ColorRect.new(); d.color = Color(11 / 255.0, 23 / 255.0, 54 / 255.0, 0.92); d.set_anchors_preset(Control.PRESET_FULL_RECT); d.mouse_filter = Control.MOUSE_FILTER_IGNORE; c.add_child(d)
 func scroll_body(c: Control, pad := 10) -> VBoxContainer:
 	var sc := ScrollContainer.new(); sc.set_anchors_preset(Control.PRESET_FULL_RECT); sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED; c.add_child(sc)

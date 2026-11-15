@@ -178,11 +178,17 @@ func layout() -> void:
 	map_end = min(oy + mh * s, vs.y) if zoom == 1.0 else vs.y
 	tp.position = Vector2((vs.x - tp.size.x) / 2, map_end - th - 6)
 	tinfo.custom_minimum_size.x = min(520, vs.x - 16); _team_top = tp.position.y
-	_place_tinfo(); _place_tinfo.call_deferred()   # again next frame: wrapped rows only know their height once their width is set
+	_place_tinfo(); _settle_tinfo()   # and again two frames later: wrapped rows only know their height once their width is set
 	if meter: _meter_place()
 var _team_top := 0.0
+func _settle_tinfo() -> void:
+	await get_tree().process_frame; await get_tree().process_frame
+	_place_tinfo()
 func _place_tinfo() -> void:
 	if not is_instance_valid(tinfo): return
+	var inner: float = tinfo.custom_minimum_size.x - 16
+	for c in tinfo_v.get_children():   # wrapping text gets its real width up front, so it never measures one letter per line
+		if c is Label and c.autowrap_mode != TextServer.AUTOWRAP_OFF: c.custom_minimum_size.x = inner
 	tinfo.size = Vector2(tinfo.custom_minimum_size.x, 0); tinfo.reset_size()
 	var vs := size if size.x > 0 else get_viewport_rect().size
 	tinfo.position = Vector2((vs.x - tinfo.size.x) / 2, _team_top - tinfo.size.y - 6)
