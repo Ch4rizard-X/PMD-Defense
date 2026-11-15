@@ -74,6 +74,8 @@ func build_hud() -> void:
 	var tst := K.sb(Color(11 / 255.0, 31 / 255.0, 92 / 255.0, 0.8), Color(223 / 255.0, 234 / 255.0, 1, 0.53), 2, 12, 4)
 	var tpc := PanelContainer.new(); tpc.add_theme_stylebox_override("panel", tst); tpc.name = "TeamPanel"; add_child(tpc)
 	tpc.add_child(teamsv); teamrow = K.hbox(4); teamsv.add_child(teamrow)
+	tpc.mouse_filter = Control.MOUSE_FILTER_STOP; tpc.gui_input.connect(func(ev): _row_input(ev, null))
+	teamsv.mouse_filter = Control.MOUSE_FILTER_PASS; teamrow.mouse_filter = Control.MOUSE_FILTER_PASS
 	# info panel
 	tinfo = PanelContainer.new(); tinfo.add_theme_stylebox_override("panel", K.win_sb(2, 10, 8)); tinfo.visible = false; add_child(tinfo)
 	tinfo_v = K.vbox(4); tinfo.add_child(tinfo_v)
@@ -92,11 +94,27 @@ func build_team() -> void:
 		var ic := K.icon(e.id, 42); ic.position = Vector2(7, 0); top.add_child(ic)
 		if BT.sees_why(e) != null: top.add_child(ui.eye_badge(true))
 		var tl := K.lbl("", 11, Color.WHITE, false); tl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER; v.add_child(tl)
-		c.gui_input.connect(func(ev):
-			if ev is InputEventMouseButton and not ev.pressed and ev.button_index == MOUSE_BUTTON_LEFT and c.get_global_rect().has_point(ev.global_position) and not teamsv.has_meta("drag"):
-				Snd.sfx("tap"); _team_tap(e))
+		c.gui_input.connect(func(ev): _row_input(ev, e))
 		teamrow.add_child(c); tcards[e.u] = {"c": c, "tl": tl, "ic": ic, "id": e.id, "e": e}
 	refresh_hud(); layout.call_deferred()
+# team row: swipe anywhere on it to scroll (with a little glide); a tap that didn't move picks the card
+var _rdrag = null; var _rvel := 0.0
+func _row_input(ev: InputEvent, e) -> void:
+	if ev is InputEventMouseButton and ev.button_index == MOUSE_BUTTON_LEFT:
+		if ev.pressed: _rdrag = {"x": ev.global_position.x, "s": teamsv.scroll_horizontal, "moved": false, "lx": ev.global_position.x, "t": Time.get_ticks_msec()}; _rvel = 0.0
+		elif _rdrag != null:
+			var tap: bool = not _rdrag.moved; _rdrag = null
+			if tap and e != null: Snd.sfx("tap"); _team_tap(e)
+	elif ev is InputEventMouseMotion and _rdrag != null:
+		var dx: float = ev.global_position.x - _rdrag.x
+		if not _rdrag.moved and absf(dx) < 10: return
+		_rdrag.moved = true
+		teamsv.scroll_horizontal = int(_rdrag.s - dx)
+		var now := Time.get_ticks_msec(); var dt: float = max(1, now - _rdrag.t) / 1000.0
+		_rvel = lerpf(_rvel, -(ev.global_position.x - _rdrag.lx) / dt, 0.5); _rdrag.lx = ev.global_position.x; _rdrag.t = now
+func _row_glide(dt: float) -> void:
+	if _rdrag != null or absf(_rvel) < 20: _rvel = 0.0 if _rdrag == null else _rvel; return
+	teamsv.scroll_horizontal = int(teamsv.scroll_horizontal + _rvel * dt); _rvel *= pow(0.02, dt)
 func _team_tap(e: Dictionary) -> void:
 	for t in B.towers:
 		if is_same(t.e, e): B.sel = t; B.placing = null; tower_info(); return
@@ -210,6 +228,7 @@ func _place_tinfo() -> void:
 	tinfo.position = Vector2((vs.x - tinfo.size.x) / 2, _team_top - tinfo.size.y - 6)
 func _process(dt: float) -> void:
 	if B == null: return
+	_row_glide(dt)
 	BT.tick(min(0.05, dt))
 	if B.asks.size() and K.modal == null: ask_join()
 	_hud_t -= dt
