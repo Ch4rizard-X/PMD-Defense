@@ -13,7 +13,8 @@ function typeTag(t) { return `<span class="ty" style="background:${TCOL[t]}">${T
 /* small sprite icon: first Idle frame, facing down */
 /* a Pokémon's idle animation playing in a small canvas (stops when removed from the page) */
 /* Battery saver (default on): 30 fps and the battle drawn at the pixel art's own resolution; "Smooth" = 60 fps at full screen resolution */
-const SMOOTH = () => !!(G && G.opts && G.opts.smooth);
+const SMOOTH = () => !(G && G.opts && G.opts.fps60 === false);   // the 60 fps option (on by default); off = 30 fps
+const LOWRES = () => !(G && G.opts && G.opts.lowres === false);   // Lower resolution (on by default): the battle is drawn at the art's own resolution
 const FPS = () => SMOOTH() ? 60 : 30;
 function gate(now, st, fps) { if (now - (st.l || 0) < 1000 / (fps || FPS()) - 3) return false; st.l = now; return true; }
 function animIcon(id, size) {
@@ -629,8 +630,10 @@ function optionsPanel(after) {
   const b = panel('<h3>Options</h3>', after);
   const render = () => {
     b.innerHTML = '<h3>Options</h3>';
-    const bs = el('div', 'move', '<b>Battery saver</b> <span class="hint">30 fps and lighter drawing, so the phone stays cooler</span>'); const bb = el('button', 'sm' + (SMOOTH() ? ' alt' : ''), SMOOTH() ? 'Off (smooth)' : 'On');
-    bb.onclick = () => { G.opts.smooth = !G.opts.smooth; save(); if (B && UI.screen === 'battle') layout(); render(); }; bs.appendChild(bb); b.appendChild(bs);
+    const fs = el('div', 'move', '<b>60 fps</b> <span class="hint">Smooth motion; 30 fps is a bit cooler but choppier</span>'); const fbn = el('button', 'sm' + (SMOOTH() ? '' : ' alt'), SMOOTH() ? 'On' : 'Off (30 fps)');
+    fbn.onclick = () => { G.opts.fps60 = !SMOOTH(); save(); render(); }; fs.appendChild(fbn); b.appendChild(fs);
+    const rs = el('div', 'move', '<b>Lower resolution</b> <span class="hint">Draws fewer pixels so the phone stays much cooler</span>'); const rbn = el('button', 'sm' + (LOWRES() ? '' : ' alt'), LOWRES() ? 'On' : 'Off');
+    rbn.onclick = () => { G.opts.lowres = !LOWRES(); save(); if (B && UI.screen === 'battle') layout(); render(); }; rs.appendChild(rbn); b.appendChild(rs);
     const s = el('div', 'move', '<b>Sound</b>'); const sb = el('button', 'sm' + (G.opts.mute ? ' alt' : ''), G.opts.mute ? 'Off' : 'On');
     sb.onclick = () => { G.opts.mute = !G.opts.mute; if (G.opts.mute && SND.music) SND.music.pause(); else { SND.cur = ''; playMusic(UI.screen === 'battle' ? DB.ts[B.set].name : '_hub'); } save(); render(); };
     s.appendChild(sb); b.appendChild(s);
@@ -731,7 +734,7 @@ function towerInfo() {
 /* the top bar covers the map, so the map lives in the space under it: hudInset = the bar's bottom edge in canvas pixels */
 function hudInset() { const h = document.querySelector('#hud .hb'), st = $('#stage'); if (!h || !st) return 0; return Math.max(0, h.getBoundingClientRect().bottom - st.getBoundingClientRect().top + 4); }
 function teamInset() { const t = $('#teambar'); return t && t.children.length ? t.getBoundingClientRect().height + 10 : 0; }
-function playAspect() { fitHud(); const w = innerWidth, h = Math.max(1, innerHeight - hudInset() - teamInset()); return Math.max(w, h) / Math.max(1, Math.min(w, h)); }
+function playAspect() { fitHud(); const w = innerWidth, h = Math.max(1, innerHeight - hudInset()); return Math.max(w, h) / Math.max(1, Math.min(w, h)); }   // the space under the top bar (the team row floats over the map)
 /* re-fit only when the bar's contents outgrow (or no longer need) the current shrink */
 let HUDW = 0; function fitHudIfWider() { const h = document.querySelector('#hud .hb'); if (!h) return; const w = h.scrollWidth; if (Math.abs(w - HUDW) > 2) { HUDW = w; fitHud(); } }
 /* the top bar is one row: if it is wider than the screen it shrinks to fit */
@@ -750,20 +753,20 @@ function layout() {
   }
   const area = $('#stage'), r = area.getBoundingClientRect();
   let dpr = Math.min(2, devicePixelRatio || 1);
-  if (!SMOOTH()) {   // draw at the art's own resolution: one canvas pixel per art pixel is all the detail there is
-    const hudC = hudInset(), botC = teamInset(), artPerCss = Math.min(r.width / (B.M.W * TZ), Math.max(1, r.height - hudC - botC) / (B.M.H * TZ)) * (UI.zoom || 1);
+  if (LOWRES()) {   // draw at the art's own resolution: one canvas pixel per art pixel is all the detail there is
+    const hudC = hudInset(), artPerCss = Math.min(r.width / (B.M.W * TZ), Math.max(1, r.height - hudC) / (B.M.H * TZ)) * (UI.zoom || 1);
     dpr = clamp(1 / Math.max(0.01, artPerCss), 1, dpr);
   }
   CV.width = Math.floor(r.width * dpr); CV.height = Math.floor(r.height * dpr); CV.style.width = r.width + 'px'; CV.style.height = r.height + 'px';
   fitHud();
-  const top = Math.min(CV.height * 0.4, hudInset() * dpr), bot = Math.min(CV.height * 0.3, teamInset() * dpr), ah = CV.height - top - bot, my = top + ah / 2;   // play area: under the top bar, above the team row
+  const top = Math.min(CV.height * 0.4, hudInset() * dpr), bot = 0, ah = CV.height - top - bot, my = top + ah / 2;   // play area: everything under the top bar (the team row floats over the map)
   const mw = B.M.W * TZ, mh = B.M.H * TZ, s0 = Math.min(CV.width / mw, ah / mh);   // the whole map fits the play area (it is made in that shape, so the edges left over are thin)
   const z = UI.zoom || 1, s = s0 * z, cx = UI.zc ? UI.zc[0] : mw / 2, cy = UI.zc ? UI.zc[1] : mh / 2;   // pinch zoom: zc is the map point at the play area's centre
   VIEW = { s, s0, ox: CV.width / 2 - cx * s, oy: my - cy * s, dpr, top };
   VIEW.ox = mw * s <= CV.width ? (CV.width - mw * s) / 2 : clamp(VIEW.ox, CV.width - mw * s, 0);
   VIEW.oy = mh * s <= ah ? top : clamp(VIEW.oy, CV.height - bot - mh * s, top);   // the map sits right under the top bar
-  { // the team row sits right under the map (where the map ends at normal zoom), and the move info right above the row
-    const tb = $('#teambar'), y = (top + Math.min(mh * s0, ah)) / dpr + 4;
+  { // the team row floats over the bottom edge of the map (where the map ends at normal zoom), and the move info right above the row
+    const tb = $('#teambar'), mapEnd = (top + Math.min(mh * s0, ah)) / dpr, th = tb && tb.children.length ? tb.getBoundingClientRect().height : 0, y = mapEnd - th - 6;
     if (tb) { tb.style.top = y + 'px'; tb.style.bottom = 'auto'; }
     const ti = $('#tinfo'); if (ti && tb) ti.style.bottom = (innerHeight - y + 6) + 'px';
     const me = $('#meter'); if (me) { me.style.maxHeight = Math.max(120, y - top / dpr - 12) + 'px'; if (G.opts.meterPos) meterPlace(); else me.style.top = (top / dpr + 4) + 'px'; }

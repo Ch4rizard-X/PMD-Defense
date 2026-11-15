@@ -214,10 +214,10 @@ function shopPrice(p) { return Math.round(p * (1 + mod('shop'))); }
 /* ---------- save ---------- */
 let G = null;
 const SAVE_KEY = 'routedef_v1';
-function newSave() { return { v: 2, mt: { 0: 1 }, box: [], uid: 1, money: 0, rp: 0, tree: {}, stars: {}, items: {}, tools: {}, held: {}, tier: 1, seen: {}, own: {}, opts: { mute: false }, stats: { maps: 0, wins: 0 } }; }
+function newSave() { return { v: 2, mt: { 0: 1 }, box: [], uid: 1, money: 0, rp: 0, tree: {}, stars: {}, items: {}, tools: {}, held: {}, tier: 1, seen: {}, own: {}, opts: { mute: false, fps60: true, lowres: true, gfx: 1 }, stats: { maps: 0, wins: 0 } }; }
 function save() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(G)); } catch (e) {} }
 function load() { try { const s = localStorage.getItem(SAVE_KEY); if (s) { const g = JSON.parse(s); if (!g.v || g.v < 2) return null;   // per-map tiers: saves from before start over
-      g.mt = g.mt || { 0: 1 }; g.held = g.held || {}; g.rp = g.rp || 0; g.tree = g.tree || {}; g.stars = g.stars || {}; g.tools = g.tools || {}; for (const e of g.box) { if (e.ab == null) e.ab = rollAbility(e.id, 0.05); if (e.it == null) e.it = 0; if (!e.nat) e.nat = rollNat(); if (!e.iv) e.iv = rollIV(); if (!e.ht) e.ht = [0, 0, 0, 0, 0, 0]; if (e.mint == null) e.mint = 0; } return g; } } catch (e) {} return null; }
+      g.mt = g.mt || { 0: 1 }; g.opts = g.opts || {}; if (!(g.opts.gfx >= 1)) { g.opts.fps60 = true; g.opts.lowres = true; g.opts.gfx = 1; }   /* the old Battery saver became two options: 60 fps and Lower resolution, both on */ g.held = g.held || {}; g.rp = g.rp || 0; g.tree = g.tree || {}; g.stars = g.stars || {}; g.tools = g.tools || {}; for (const e of g.box) { if (e.ab == null) e.ab = rollAbility(e.id, 0.05); if (e.it == null) e.it = 0; if (!e.nat) e.nat = rollNat(); if (!e.iv) e.iv = rollIV(); if (!e.ht) e.ht = [0, 0, 0, 0, 0, 0]; if (e.mint == null) e.mint = 0; } return g; } } catch (e) {} return null; }
 function makeMon(id, lv, nat, iv) {
   const e = { u: G.uid++, id, lv, xp: xpFor(SP[id].gr, lv), mv: bestMoves(id, lv), pend: [], ab: rollAbility(id, 0.05), it: 0, nat: nat || rollNat(), iv: iv ? iv.slice() : rollIV(), ht: [0, 0, 0, 0, 0, 0], mint: 0 };
   G.own[id] = 1; G.seen[id] = 1; return e;
