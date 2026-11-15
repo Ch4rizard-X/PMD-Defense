@@ -35,7 +35,7 @@ func start(set_idx: int, tier: int, seed: int, team: Array) -> void:
 	build_hud()
 	resized.connect(layout)
 	ui.apply_fps()
-	(func(): _fix_aspect(); layout()).call_deferred()
+	(func(): layout(); _fix_aspect(); layout()).call_deferred()   # measure the top bar first, then shape the map to the space under it
 func _fix_aspect() -> void:   # make the map in the shape of the space under the top bar (the team row floats over the map)
 	var a := play_aspect()
 	if absf(a - B.aspect) > 0.01: B.aspect = a; B.M = MG.gen_map(B.set, B.portrait, B.seed, null, a, B.tier)
@@ -87,6 +87,7 @@ func build_team() -> void:
 	for e in B.team:
 		var c := PanelContainer.new(); c.custom_minimum_size = Vector2(64, 0); c.mouse_filter = Control.MOUSE_FILTER_STOP
 		var v := K.vbox(0); v.mouse_filter = Control.MOUSE_FILTER_IGNORE; c.add_child(v)
+		var stripe := ColorRect.new(); stripe.color = C.TCOL[C.SP[e.id].t[0]]; stripe.custom_minimum_size = Vector2(0, 3); stripe.mouse_filter = Control.MOUSE_FILTER_IGNORE; v.add_child(stripe)
 		var top := Control.new(); top.custom_minimum_size = Vector2(56, 42); top.mouse_filter = Control.MOUSE_FILTER_IGNORE; v.add_child(top)
 		var ic := K.icon(e.id, 42); ic.position = Vector2(7, 0); top.add_child(ic)
 		if BT.sees_why(e) != null: top.add_child(ui.eye_badge(true))
@@ -137,7 +138,6 @@ func refresh_hud() -> void:
 		if T.get("k", "") != key:
 			T.k = key
 			var st := K.sb(Color(20 / 255.0, 48 / 255.0, 120 / 255.0, 0.95) if tw == null else Color(30 / 255.0, 80 / 255.0, 40 / 255.0, 0.95), K.GOLD if sel else Color(1, 1, 1, 0.3), 2 if not sel else 3, 8, 3)
-			st.border_width_top = 4; if not sel: st.border_color = C.TCOL[C.SP[e.id].t[0]]
 			T.c.add_theme_stylebox_override("panel", st); T.c.modulate = Color(1, 1, 1, 0.55) if poor else Color.WHITE
 		var txt := "Lv%d\n%s" % [e.lv, ("%d KO" % tw.kills) if tw != null else "$%d" % C.place_cost(e)]
 		if T.tl.text != txt: T.tl.text = txt
@@ -171,8 +171,9 @@ func layout() -> void:
 	view.scale = Vector2(q, q)
 	# team row and info panel
 	var tp: PanelContainer = get_node("TeamPanel")
-	tp.reset_size(); var tw: float = min(teamrow.get_combined_minimum_size().x + 8 + 4, vs.x - 12); var th := tp.get_combined_minimum_size().y
-	teamsv.custom_minimum_size = Vector2(tw - 8, teamrow.get_combined_minimum_size().y)
+	var rowmin := teamrow.get_combined_minimum_size()
+	teamsv.custom_minimum_size = Vector2(min(rowmin.x, vs.x - 12 - 8), rowmin.y)   # exactly the cards' width (scrolls when it's wider than the screen)
+	tp.size = Vector2.ZERO; var th := tp.get_combined_minimum_size().y
 	tp.reset_size(); th = tp.size.y
 	var map_end: float = min(oy + mh * s0 * (1.0 if zoom == 1.0 else 0.0) + (mh * s if zoom != 1.0 else 0.0), vs.y) if zoom == 1.0 else vs.y
 	map_end = min(oy + mh * s, vs.y) if zoom == 1.0 else vs.y
