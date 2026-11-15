@@ -1,9 +1,9 @@
 extends Node
 var opened := 0
-func mb(p: Vector2, down: bool) -> void:
-	var e := InputEventMouseButton.new(); e.button_index = MOUSE_BUTTON_LEFT; e.pressed = down; var q := get_viewport().get_final_transform() * p; e.position = q; e.global_position = q; Input.parse_input_event(e)
+func mb(p: Vector2, down: bool) -> void:   # a finger, like on the phone (no mouse hover before it)
+	var e := InputEventScreenTouch.new(); e.index = 0; e.pressed = down; e.position = get_viewport().get_final_transform() * p; Input.parse_input_event(e)
 func mm(p: Vector2, r: Vector2) -> void:
-	var e := InputEventMouseMotion.new(); var q := get_viewport().get_final_transform() * p; e.position = q; e.global_position = q; e.relative = r * 2.7; e.button_mask = MOUSE_BUTTON_MASK_LEFT; Input.parse_input_event(e)
+	var e := InputEventScreenDrag.new(); e.index = 0; e.position = get_viewport().get_final_transform() * p; e.relative = r * 2.7; Input.parse_input_event(e)
 func find_sc(n: Node) -> ScrollContainer:
 	if n is ScrollContainer and n.is_visible_in_tree() and n.vertical_scroll_mode != ScrollContainer.SCROLL_MODE_DISABLED: return n
 	for c in n.get_children():
@@ -13,6 +13,7 @@ func find_sc(n: Node) -> ScrollContainer:
 func _ready() -> void:
 	get_tree().create_timer(60).timeout.connect(func(): print("TIMEOUT"); get_tree().quit())
 	DirAccess.remove_absolute("user://save.bin"); C.G = C.new_save()
+	Input.emulate_touch_from_mouse = true; print("touchscreen mode: ", DisplayServer.is_touchscreen_available())
 	await get_tree().process_frame
 	var ui = load("res://main.tscn").instantiate(); get_tree().root.add_child(ui)
 	await get_tree().create_timer(1.5).timeout

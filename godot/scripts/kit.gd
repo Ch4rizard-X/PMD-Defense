@@ -206,12 +206,22 @@ func _scroll_under(c: Node) -> ScrollContainer:
 		if c is ScrollContainer and not c.has_meta("own_drag"): return c
 		c = c.get_parent()
 	return null
+# the list under a finger, found from where it touched (on a phone there's no mouse "hover" before a touch)
+func _scroll_at(p: Vector2) -> ScrollContainer:
+	var root: Node = modal if is_instance_valid(modal) else get_tree().root   # with a popup open, only its lists
+	var best: ScrollContainer = null; var st: Array = [root]
+	while st.size():
+		var n: Node = st.pop_back()
+		if n is CanvasItem and not n.visible: continue
+		if n is ScrollContainer and not n.has_meta("own_drag") and n.get_global_rect().has_point(p): best = n   # later in the tree = drawn on top / nested deeper
+		var ch := n.get_children(); ch.reverse(); st.append_array(ch)
+	return best
 func _input(ev: InputEvent) -> void:
 	if _sw_fake: return
 	if ev is InputEventMouseButton and ev.button_index == MOUSE_BUTTON_LEFT:
 		if ev.pressed:
 			_gl_sc = null
-			var sc := _scroll_under(get_viewport().gui_get_hovered_control())
+			var sc := _scroll_at(ev.position)
 			_sw = null if sc == null else {"sc": sc, "p": ev.position, "h": sc.scroll_horizontal, "v": sc.scroll_vertical, "on": false, "lp": ev.position, "t": Time.get_ticks_msec(), "vel": Vector2.ZERO}
 		elif _sw != null:
 			if _sw.on:
