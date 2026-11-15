@@ -349,8 +349,11 @@ func mon_card(e: Dictionary, on = null, picked := false) -> PanelContainer:
 	var c := K.card(104, on, picked); var cb := K.card_box(c)
 	var top := Control.new(); top.custom_minimum_size = Vector2(0, 48); top.mouse_filter = Control.MOUSE_FILTER_IGNORE; cb.add_child(top)
 	var ic := K.icon(e.id); ic.set_anchors_preset(Control.PRESET_CENTER_TOP); ic.anchor_left = 0.5; ic.anchor_right = 0.5; ic.offset_left = -24; ic.offset_right = 24; ic.offset_bottom = 48; top.add_child(ic)
-	var lv := PanelContainer.new(); lv.add_theme_stylebox_override("panel", K.sb(K.WIND, Color(1, 1, 1, 0.27), 1, 8, 1)); lv.add_child(K.lbl("Lv %d" % e.lv, 11, Color.WHITE, false))
-	lv.set_anchors_preset(Control.PRESET_TOP_RIGHT); lv.anchor_left = 1; lv.anchor_right = 1; lv.offset_left = -40; lv.offset_right = 0; lv.mouse_filter = Control.MOUSE_FILTER_IGNORE; top.add_child(lv)
+	var lst := K.sb(K.WIND, Color(1, 1, 1, 0.27), 1, 8, 1); lst.content_margin_left = 5; lst.content_margin_right = 5
+	var lv := PanelContainer.new(); lv.add_theme_stylebox_override("panel", lst); lv.add_child(K.lbl("Lv %d" % e.lv, 11, Color.WHITE, false))
+	# sized by its text, growing leftward from the card's top-right corner (a fixed width let the text spill out)
+	lv.set_anchors_preset(Control.PRESET_TOP_RIGHT); lv.anchor_left = 1; lv.anchor_right = 1; lv.offset_left = 0; lv.offset_right = 0; lv.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	lv.mouse_filter = Control.MOUSE_FILTER_IGNORE; top.add_child(lv)
 	if BT.sees_why(e) != null: top.add_child(eye_badge(false))
 	var ty: Array = C.SP[e.id].t
 	var stripe := HBoxContainer.new(); stripe.add_theme_constant_override("separation", 0); stripe.custom_minimum_size = Vector2(0, 3); stripe.mouse_filter = Control.MOUSE_FILTER_IGNORE
