@@ -349,7 +349,7 @@ func spawn_list(i: int, tier: int) -> VBoxContainer:
 		var l := []
 		for m in SI.pool: if SI.rar[m.id] == k: l.append(m)
 		sec.call(BT.RARITY[k], l, notes[k])
-	sec.call("Heavy waves (every 5th)", SI.heavy, "")
+	sec.call("Heavy waves (every 5th)", heavy_pool(SI), "later heavy waves bring the stronger ones")
 	sec.call("Possible bosses", SI.bosses, "or a legendary, half the time" if SI.legs.size() else "")
 	if SI.legs.size(): sec.call("Legendary bosses", SI.legs, "")
 	return wrap
@@ -868,3 +868,25 @@ func _glide(dt: float) -> void:
 	if _gl_sc.horizontal_scroll_mode != ScrollContainer.SCROLL_MODE_DISABLED: _gl_sc.scroll_horizontal = int(_gl_sc.scroll_horizontal + _gl_v.x * dt)
 	_gl_v *= pow(0.03, dt)
 func _process(dt: float) -> void: _glide(dt)
+# ---- heavy waves (every 5th): the bulkiest third of the map's Pokémon (at least 6), and each heavy wave draws from the
+# next 3 of them in strength order (weakest first), so every heavy wave brings new species, stronger as the map goes on; they also grow with the map.
+# Built after the battle code's own waves (with their own random numbers, so the other waves stay exactly the same).
+# The HTML version (battle.js reworkHeavy) does the same with the same numbers.
+func heavy_pool(SI: Dictionary) -> Array:
+	var bulk: Array = BT.stable_sort(SI.pool, func(m): return -(m.b[0] + m.b[2]))
+	return bulk.slice(0, max(6, ceili(SI.pool.size() / 3.0)))
+func rework_heavy(set_idx: int, tier0: int, seed: int) -> void:
+	var B: Dictionary = BT.B; var W: int = B.waves.size()
+	var SI: Dictionary = BT.spawn_info(set_idx, tier0); var tier: float = SI.tier; var H := heavy_pool(SI)
+	var G4: Array = C.MAPGROUP[C.map_group(set_idx)]
+	var lr: Array = BT.lv_range(tier); var base: int = min(98, lr[0]); var top: int = min(100, lr[1])
+	var R = MG.Rng.new(seed ^ 0x4ea7)
+	var byB: Array = BT.stable_sort(H, func(m): return m.bst); var K := int(floor((W - 1) / 5.0))   # weakest to strongest; K heavy waves
+	for w in range(5, W, 5):
+		var f := w / float(W); var lv := int(floor(base + (top - base) * pow(f, 1.3) + 0.5)); var k := w / 5 - 1
+		var st: int = max(0, int(floor(k * (byB.size() - 3) / float(K - 1) + 0.5))) if K > 1 else 0
+		var picks: Array = byB.slice(st, st + 3)   # a window of 3 that walks from the weakest to the strongest
+		var n := int(floor((3 + tier * 0.4 + w * 0.3) * G4[4] + 0.5))
+		var list := []
+		for i in n: list.append({"id": picks[int(floor(R.next() * picks.size()))].id, "lv": min(100, lv + 2), "gap": 1.6})
+		B.waves[w - 1] = list

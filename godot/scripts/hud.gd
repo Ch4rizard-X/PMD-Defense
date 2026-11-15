@@ -25,7 +25,7 @@ func start(set_idx: int, tier: int, seed: int, team: Array) -> void:
 	zoom = 1.0; zc = null
 	var vs := get_viewport_rect().size; var portrait := vs.y > vs.x
 	var bgc := ColorRect.new(); bgc.color = Color("#0a1430"); bgc.set_anchors_preset(Control.PRESET_FULL_RECT); bgc.mouse_filter = Control.MOUSE_FILTER_IGNORE; add_child(bgc)
-	BT.start_battle(set_idx, tier, seed, team, portrait, play_aspect())
+	BT.start_battle(set_idx, tier, seed, team, portrait, play_aspect()); ui.rework_heavy(set_idx, tier, seed)
 	BT.wave_started.connect(wave_banner); BT.wave_started.connect(func(): _wave_music.call_deferred()); BT.ask_join.connect(func(): ask_join.call_deferred()); BT.finished.connect(func(): show_result.call_deferred())
 	vp = SubViewport.new(); vp.transparent_bg = false; vp.canvas_item_default_texture_filter = Viewport.DEFAULT_CANVAS_ITEM_TEXTURE_FILTER_NEAREST; vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS; add_child(vp)
 	view = load("res://scripts/view.gd").new(); vp.add_child(view)
