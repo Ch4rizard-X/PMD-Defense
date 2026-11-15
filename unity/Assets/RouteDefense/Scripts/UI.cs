@@ -744,7 +744,7 @@ namespace RouteDefense
             var wv = B.waves[Math.Max(0, B.wave - 1)]; int left = B.phase == "wave" ? B.q.Count + B.en.Count(x => x.hp > 0) : 0;
             wprog.style.width = new Length(B.phase == "wave" && wv.Count > 0 ? Mathf.Max(0, 100 - left * 100f / wv.Count) : B.phase == "build" && B.wave > 0 ? 100 : 0, LengthUnit.Percent);
             var boss = B.en.FirstOrDefault(x => x.boss && x.hp > 0 && x.d > 0); bossBar.style.display = boss != null ? DisplayStyle.Flex : DisplayStyle.None;
-            if (hud.layout.height > 0) bossBar.style.top = hud.layout.yMax + 6;   // right under the HUD, however many rows it wraps to on a phone
+            // its height on screen is set only in BattleLayout (right under the shrunk top bar); setting it here too made it jump
             if (boss != null)
             {
                 float f = boss.hp / boss.max; if (bossRef != boss) { bossRef = boss; bossT = f; } else bossT = Mathf.Max(f, bossT - 0.01f);
