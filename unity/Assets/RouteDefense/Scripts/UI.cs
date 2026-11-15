@@ -10,6 +10,7 @@ namespace RouteDefense
 {
     public static class UI
     {
+        public static float LastInput;   // time of the last touch / drag / scroll
         public static VisualElement Root; static VisualElement screen, modal, toasts; static Action modalClose; static bool modalSticky;
         public static bool InBattle; public static BattleView View;
         static string hubTab = "routes"; static int dexGen = 1;
@@ -29,6 +30,11 @@ namespace RouteDefense
             ps.themeStyleSheet = Resources.Load<ThemeStyleSheet>("Ui/RDTheme");
             var doc = go.AddComponent<UIDocument>(); doc.panelSettings = ps; go.SetActive(true);
             Root = doc.rootVisualElement;
+            // any touch, drag or scroll counts as activity: Game.Update draws at full speed for a moment after it
+            Root.RegisterCallback<PointerDownEvent>(_ => LastInput = Time.unscaledTime, TrickleDown.TrickleDown);
+            Root.RegisterCallback<PointerMoveEvent>(_ => LastInput = Time.unscaledTime, TrickleDown.TrickleDown);
+            Root.RegisterCallback<PointerUpEvent>(_ => LastInput = Time.unscaledTime, TrickleDown.TrickleDown);
+            Root.RegisterCallback<WheelEvent>(_ => LastInput = Time.unscaledTime, TrickleDown.TrickleDown);
             var font = Resources.Load<Font>("Fonts/pmd");
             if (font != null) Root.style.unityFontDefinition = FontDefinition.FromFont(font);
             Root.style.color = Color.white; Root.style.fontSize = 16; Root.style.flexGrow = 1;
@@ -45,7 +51,9 @@ namespace RouteDefense
         public static float UiScale()   // denser or taller screens get bigger menus, times the menu size option
         {
             float dpi = Screen.dpi > 0 ? Screen.dpi : 96, opt = 1; foreach (var u in UISIZE) if (Save.G != null && u.k == Save.G.ui) opt = u.s;
-            return Mathf.Clamp(Mathf.Max(dpi / 150f, Screen.height / 720f), 1f, 3f) * opt;
+            // sized from the screen's real resolution, then shrunk by the render scale (Battery saver draws fewer pixels) so menus keep their size
+            float r = Game.RenderScale(), nativeH = Screen.height / r;
+            return Mathf.Clamp(Mathf.Max(dpi / 150f, nativeH / 720f), 1f, 3f) * opt * r;
         }
         static void Full(VisualElement e) { e.style.position = Position.Absolute; e.style.left = 0; e.style.top = 0; e.style.right = 0; e.style.bottom = 0; }
 
@@ -254,7 +262,7 @@ namespace RouteDefense
         static void OptionsPanel(Action after)
         {
             var p = Panel(after); var G = Save.G; p.Add(L("Options", 20));
-            var bsb = Box(); var bsr = Add(bsb, Row(true)); bsr.Add(L("Battery saver  ")); bsr.Add(Btn(G.smooth ? "Off (smooth)" : "On", () => { G.smooth = !G.smooth; Application.targetFrameRate = G.smooth ? 60 : 30; Save.Write(); OptionsPanel(after); }, G.smooth, true)); bsb.Add(L("30 fps instead of 60, so the phone stays cooler", 12, DIM)); p.Add(bsb);
+            var bsb = Box(); var bsr = Add(bsb, Row(true)); bsr.Add(L("Battery saver  ")); bsr.Add(Btn(G.smooth ? "Off (smooth)" : "On", () => { G.smooth = !G.smooth; Application.targetFrameRate = G.smooth ? 60 : 30; Game.ApplyResolution(); Save.Write(); OptionsPanel(after); }, G.smooth, true)); bsb.Add(L("30 fps instead of 60 and fewer pixels drawn, so the phone stays cooler (text a little softer)", 12, DIM)); p.Add(bsb);
             var sb = Box(); var sr = Add(sb, Row(true)); sr.Add(L("Sound  ")); sr.Add(Btn(G.mute ? "Off" : "On", () => { G.mute = !G.mute; Gfx.SetMute(G.mute); Save.Write(); OptionsPanel(after); }, G.mute, true)); p.Add(sb);
             var mb = Box(); mb.Add(L("Menu size")); mb.Add(L("Buttons, text and panels (the map is not affected)", 12, DIM)); var mr = Add(mb, Row(true));
             foreach (var u in UISIZE) { var uk = u.k; mr.Add(Btn(u.n, () => { G.ui = uk; if (Settings != null) Settings.scale = UiScale(); Save.Write(); OptionsPanel(after); }, G.ui != uk, true)); }
@@ -655,7 +663,7 @@ namespace RouteDefense
             var vg = new Image { sprite = Gfx.Vignette, scaleMode = ScaleMode.StretchToFill }; Full(vg); vg.pickingMode = PickingMode.Ignore; stage.Add(vg);   // soft dark edges so the HUD sits on darker corners
             hud = Add(screen, Row(false)); hud.style.position = Position.Absolute; hud.style.transformOrigin = new TransformOrigin(new Length(0), new Length(0), 0); hud.style.left = 6; hud.style.top = 6; hud.style.flexWrap = Wrap.NoWrap;   // no width cap: BattleLayout shrinks the whole bar to fit instead
             hud.style.backgroundColor = new Color(.03f, .07f, .19f, .78f); Edge(hud, new Color(.56f, .72f, 1f, .5f), 1, 8); Pad(hud, 3); hud.style.paddingLeft = 8;
-            hl = Add(hud, L("")); hud.Add(Gap(10)); hc = Add(hud, L("", 16, ACC)); hud.Add(Gap(10)); hw = Add(hud, L("")); hud.Add(Gap(6));
+            hl = Add(hud, L("")); hudL = hudC = hudW = -1; hud.Add(Gap(10)); hc = Add(hud, L("", 16, ACC)); hud.Add(Gap(10)); hw = Add(hud, L("")); hud.Add(Gap(6));
             bgo = Add(hud, Btn("GO ▶", () => Battle.B.StartWave(), false, true));
             bsp = Add(hud, Btn(Battle.B.speed + "x", () => { var B = Battle.B; B.speed = B.speed == 1 ? 2 : B.speed == 2 ? 3 : 1; bsp.text = B.speed + "x"; }, true, true));
             bau = Add(hud, Btn("Auto: " + (Battle.B.auto ? "on" : "off"), () => { var B = Battle.B; B.auto = !B.auto; bau.text = "Auto: " + (B.auto ? "on" : "off"); if (B.auto) B.StartWave(); }, true, true));
@@ -720,12 +728,16 @@ namespace RouteDefense
                 teamBar.Add(c);
             }
         }
+        static int hudL = -1, hudC = -1, hudW = -1;
         static void RefreshHud()
         {
             var B = Battle.B; if (B == null || hl == null) return;
             if (lastLives >= 0 && B.lives < lastLives) { hl.style.color = Hex("#ff5050"); hl.schedule.Execute(() => hl.style.color = Color.white).StartingIn(450); }   // lives lost: a red flash
             lastLives = B.lives;
-            hl.text = "♥ " + B.lives; hc.text = "$ " + B.cash; hw.text = "Wave " + B.wave + "/" + B.waves.Count;
+            // texts only change when the numbers do (no new strings every frame)
+            if (B.lives != hudL) { hudL = B.lives; hl.text = "♥ " + B.lives; }
+            if (B.cash != hudC) { hudC = B.cash; hc.text = "$ " + B.cash; }
+            if (B.wave != hudW) { hudW = B.wave; hw.text = "Wave " + B.wave + "/" + B.waves.Count; }
             var wv = B.waves[Math.Max(0, B.wave - 1)]; int left = B.phase == "wave" ? B.q.Count + B.en.Count(x => x.hp > 0) : 0;
             wprog.style.width = new Length(B.phase == "wave" && wv.Count > 0 ? Mathf.Max(0, 100 - left * 100f / wv.Count) : B.phase == "build" && B.wave > 0 ? 100 : 0, LengthUnit.Percent);
             var boss = B.en.FirstOrDefault(x => x.boss && x.hp > 0 && x.d > 0); bossBar.style.display = boss != null ? DisplayStyle.Flex : DisplayStyle.None;

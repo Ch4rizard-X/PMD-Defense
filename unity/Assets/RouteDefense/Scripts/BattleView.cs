@@ -79,6 +79,7 @@ namespace RouteDefense
             return new Vector2(w.x, -w.y);
         }
 
+        readonly List<object> deadBuf = new List<object>();   // reused every frame
         void LateUpdate()
         {
             var B = Battle.B; bool on = B != null && UI.InBattle;
@@ -173,7 +174,7 @@ namespace RouteDefense
                 v.sr.sprite = Gfx.FxFrame(da, f, 0); v.go.transform.position = W(dc.x, dc.y - 6); v.sr.transform.localScale = Vector3.one * Battle.FXS; v.sr.sortingOrder = (int)dc.y * 2; v.sr.transform.localRotation = Quaternion.identity;
             }
             DrawZaps(B);
-            var dead = new List<object>(); foreach (var kv in views) if (!kv.Value.used) dead.Add(kv.Key);
+            var dead = deadBuf; dead.Clear(); foreach (var kv in views) if (!kv.Value.used) dead.Add(kv.Key);
             foreach (var k in dead) { Destroy(views[k].go); views.Remove(k); }
 
             // damage numbers (PMD's own digits)

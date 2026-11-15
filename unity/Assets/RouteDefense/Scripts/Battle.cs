@@ -283,7 +283,7 @@ namespace RouteDefense
             foreach (int m in moves)
             {
                 string use = DB.MoveUse(m); if (use == null) continue;
-                var M_ = DB.Mv(m); float r = TowerRange(t, m); var list = InRange(t, r).Where(e => CanHit(t, m, e)).ToList(); if (list.Count == 0) continue;
+                var M_ = DB.Mv(m); float r = TowerRange(t, m); var list = Targets(t, r, m); if (list == null) continue;
                 var tg = ChooseTarget(t, list); float sc = 0;
                 if (use == "dmg")
                 {
@@ -508,6 +508,18 @@ namespace RouteDefense
         public static float AnimLen(int id, string name) { var a = Gfx.Meta(id, name); return a != null ? a.Total / 60f : 0.5f; }
 
         /* ---------- update ---------- */
+        // per-frame helpers that make no garbage (fewer memory clean-ups = less work for the phone)
+        readonly List<Enemy> enBuf = new List<Enemy>();
+        static readonly string[] SAND_SAFE = { "sand-veil", "sand-rush", "sand-force", "overcoat", "magic-guard" }, HAIL_SAFE = { "ice-body", "snow-cloak", "overcoat", "magic-guard" };
+        bool AnyAlive() { foreach (var e in en) if (e.hp > 0) return true; return false; }
+        bool NearQuirk11(Enemy e) { foreach (var t in towers) if (HasT(t, 11) && Dist(t.x, t.y, e.x, e.y) <= MaxRange(t)) return true; return false; }
+        // enemies this move can hit; null (no new list) when there are none, which is most checks
+        List<Enemy> Targets(Tower t, float r, int m)
+        {
+            List<Enemy> l = null;
+            foreach (var e in en) if (e.hp > 0 && e.d > 0 && Dist(e.x, e.y, t.x, t.y) <= r && CanHit(t, m, e)) (l ??= new List<Enemy>()).Add(e);
+            return l;
+        }
         public void Tick(float dt)
         {
             if (phase == "win" || phase == "lose" || paused) return;
@@ -515,7 +527,7 @@ namespace RouteDefense
             if (phase == "wave")
             {
                 if (q.Count > 0) { qt -= dt; while (q.Count > 0 && qt <= 0) { var s = q[0]; q.RemoveAt(0); Spawn(s); qt += s.gap; } }
-                else if (!en.Any(e => e.hp > 0))
+                else if (!AnyAlive())
                 {
                     cash += Mathf.RoundToInt((30 + wave * 6) * (1 + Rescue.Mod("waveBonus")));
                     if (pwx != null && wave >= pwx.until) pwx = null;   // your weather ends with its last wave
@@ -526,15 +538,16 @@ namespace RouteDefense
             }
             SyncWeather();
             string chipK = Wk == "sand" || Wk == "hail" ? Wk : null;
-            foreach (var e in en.ToList())
+            enBuf.Clear(); enBuf.AddRange(en);   // a reused copy: the list can change while enemies are handled (knock-outs, splits)
+            foreach (var e in enBuf)
             {
                 e.at += dt;
                 if (e.hp <= 0) { e.dead -= dt; continue; }
                 if (chipK != null && e.d > 0 && !e.under)   // Sandstorm hurts all but Rock / Ground / Steel, Hail all but Ice (and a few abilities)
                 {
                     var ety = DB.SP[e.id].t;
-                    bool safe = chipK == "sand" ? ety.Any(x => x == 5 || x == 4 || x == 8) || new[] { "sand-veil", "sand-rush", "sand-force", "overcoat", "magic-guard" }.Contains(e.ak)
-                        : ety.Contains(14) || new[] { "ice-body", "snow-cloak", "overcoat", "magic-guard" }.Contains(e.ak);
+                    bool safe = chipK == "sand" ? Array.IndexOf(ety, 5) >= 0 || Array.IndexOf(ety, 4) >= 0 || Array.IndexOf(ety, 8) >= 0 || Array.IndexOf(SAND_SAFE, e.ak) >= 0
+                        : Array.IndexOf(ety, 14) >= 0 || Array.IndexOf(HAIL_SAFE, e.ak) >= 0;
                     if (!safe) { e.wdot += e.max * 0.02f * (1 + Rescue.Mod("weatherChip")) * dt * (e.boss ? 0.4f : 1); if (e.wdot >= 1) { float d = Mathf.Floor(e.wdot); e.wdot -= d; e.hp -= d; if (e.hp <= 0) { Ko(null, e); continue; } } }
                 }
                 if (e.akOff > 0 && time > e.akOff) { e.ak = e.ak0; e.akOff = 0; }
@@ -567,7 +580,7 @@ namespace RouteDefense
                     if (e.ak == "quick-feet" && e.sts != null) v *= 1.5f;
                     if (e.ak == "speed-boost") { e.sbt += dt; v *= Math.Min(2, 1 + e.sbt / 40); }
                     v *= SkSpeed(e); if (e.back > time) v = -Math.Abs(v) * 0.6f; if (DecoyBlocks(e)) v = 0;   // move skills
-                    if (e.chill > 0) v *= 0.85f; if (e.wsl > 0) v *= 0.9f; if (towers.Any(t => HasT(t, 11) && Dist(t.x, t.y, e.x, e.y) <= MaxRange(t))) v *= 0.9f;   // Ice / Water / Grass quirks
+                    if (e.chill > 0) v *= 0.85f; if (e.wsl > 0) v *= 0.9f; if (NearQuirk11(e)) v *= 0.9f;   // Ice / Water / Grass quirks
                     if (e.sts == "paralysis") v *= 0.5f;
                     if (e.sts == "confusion") v *= Mathf.Sin(time * 6) > 0 ? 0.6f : -0.3f;
                     e.d = Math.Max(e.back > time ? 1 : -1e9f, e.d + v * dt);

@@ -205,12 +205,14 @@ namespace RouteDefense
         }
 
         /* per-tick work: skill timers, traps, decoys, adjacency auras */
+        readonly List<int> skMv = new List<int>(), skKeys = new List<int>(); readonly List<Trap> skTraps = new List<Trap>(); readonly List<Enemy> skEn = new List<Enemy>();
         void SkillTick(float dt)
         {
             var S = Skills(); bool wave = phase == "wave";
             foreach (var t in towers)
             {
-                foreach (int m in t.e.mv.ToList())
+                skMv.Clear(); skMv.AddRange(t.e.mv);   // reused copy (a skill can change the move list)
+                foreach (int m in skMv)
                 {
                     if (!wave || !S.TryGetValue(m, out var s)) continue;
                     float c = (t.skc.TryGetValue(m, out var v) ? v : 1 + rnd) - dt;
@@ -225,7 +227,8 @@ namespace RouteDefense
                             if (bb && e.sts == null && rnd < 0.5f * dt) Inflict(e, "poison", t); if (bw && e.sts == null && rnd < 0.5f * dt) Inflict(e, "burn", t);
                         }
             }
-            foreach (var tr in traps.ToList()) foreach (var e in en.ToList())
+            skTraps.Clear(); skTraps.AddRange(traps); skEn.Clear(); skEn.AddRange(en);
+            foreach (var tr in skTraps) foreach (var e in skEn)
                     if (Visible(e) && !e.air && e.r == tr.r && Math.Abs(e.d - tr.d) < 10 && !tr.hit.Contains(e))
                     {
                         tr.hit.Add(e); msrc = tr.t; mlab = DB.Mv(tr.m).n;
@@ -236,7 +239,7 @@ namespace RouteDefense
                         msrc = null;
                     }
             traps.RemoveAll(x => !towers.Contains(x.t)); decoys.RemoveAll(x => !towers.Contains(x.t) || (x.u > 0 && x.u < time));
-            foreach (var k in terr.Keys.ToList()) if (terr[k] < time) terr.Remove(k);
+            if (terr.Count > 0) { skKeys.Clear(); skKeys.AddRange(terr.Keys); foreach (var k in skKeys) if (terr[k] < time) terr.Remove(k); }
             if (mwx != null && mwxUntil < time) { mwx = null; SyncWeather(); }
             foreach (var z in zap) z.t -= dt; zap.RemoveAll(z => z.t <= 0);
         }
