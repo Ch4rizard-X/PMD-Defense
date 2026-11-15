@@ -238,7 +238,7 @@ function spawnList(i, tier) {
   const nSeen = SI.pool.filter(m => G.seen[m.id]).length;
   wrap.appendChild(el('div', 'hint', `<b>Wild Pokémon here</b> - ${nSeen}/${SI.pool.length} seen`));
   RARITY.forEach((n, k) => sec(n, SI.pool.filter(m => SI.rar.get(m.id) === k), ['', '60% as often', '35% as often', '15% as often'][k]));
-  sec('Heavy waves (every 5th)', SI.heavy);
+  sec('Heavy waves (every 5th)', heavyPool(SI), 'later heavy waves bring the stronger ones');
   sec('Possible bosses', SI.bosses, SI.legs.length ? 'or a legendary, half the time' : '');
   if (SI.legs.length) sec('Legendary bosses', SI.legs);
   return wrap;

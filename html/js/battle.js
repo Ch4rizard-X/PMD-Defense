@@ -76,11 +76,31 @@ function wavesFor(setIdx, tier0, R) {
   return waves;
 }
 
+/* heavy waves (every 5th): the bulkiest third of the map's Pokémon (at least 6), and each heavy wave draws from the
+   next 3 of them in strength order (weakest first), so every heavy wave brings new species, stronger as the map goes on; they also grow with the map.
+   Built after the normal wave builder, with their own random numbers, so the other waves stay exactly the same.
+   The Godot version (ui.gd rework_heavy) does the same with the same numbers. */
+function heavyPool(SI) {
+  return SI.pool.slice().sort((a, b) => b.b[0] + b.b[2] - a.b[0] - a.b[2]).slice(0, Math.max(6, Math.ceil(SI.pool.length / 3)));
+}
+function reworkHeavy(waves, setIdx, tier0, seed) {
+  const SI = spawnInfo(setIdx, tier0), tier = SI.tier, H = heavyPool(SI), W = waves.length, G4 = MAPGROUP[mapGroup(setIdx)];
+  const [b0, t0] = lvRange(tier), base = Math.min(98, b0), top = Math.min(100, t0), R = rng(seed ^ 0x4ea7);
+  const byB = H.slice().sort((a, b) => a.bst - b.bst), K = Math.floor((W - 1) / 5);   // weakest to strongest; K heavy waves
+  for (let w = 5; w < W; w += 5) {
+    const f = w / W, lv = Math.round(base + (top - base) * Math.pow(f, 1.3)), k = w / 5 - 1;
+    const st = K > 1 ? Math.max(0, Math.round(k * (byB.length - 3) / (K - 1))) : 0, picks = byB.slice(st, st + 3);   // a window of 3 that walks from the weakest to the strongest
+    const n = Math.round((3 + tier * 0.4 + w * 0.3) * G4[4]), list = [];
+    for (let i = 0; i < n; i++) list.push({ id: picks[Math.floor(R() * picks.length)].id, lv: Math.min(100, lv + 2), gap: 1.6 });
+    waves[w - 1] = list;
+  }
+  return waves;
+}
 /* ---------- start ---------- */
 function startBattle(setIdx, tier, seed, team, portrait, aspect) {
   const R = rng(seed ^ 0x5bd1e995);
   const M = genMap(setIdx, portrait, seed, null, aspect, tier);
-  B = { M, set: setIdx, tier, th: threatTier(setIdx, tier), seed, team, portrait, aspect, waves: wavesFor(setIdx, tier, R), wave: 0, phase: 'build',
+  B = { M, set: setIdx, tier, th: threatTier(setIdx, tier), seed, team, portrait, aspect, waves: reworkHeavy(wavesFor(setIdx, tier, R), setIdx, tier, seed), wave: 0, phase: 'build',
     lives: 100, cash: Math.round(220 + threatTier(setIdx, tier) * 60 + mod('startCash')), weather: null, towers: [], en: [], proj: [], fx: [], fl: [], q: [], qt: 0, time: 0,
     speed: 1, sel: null, placing: null, ghost: null, auto: false, recruits: [], asks: [], declined: new Set(), xpLog: {}, kills: 0, over: false };
   for (const e of team) { G.seen[e.id] = 1; }
