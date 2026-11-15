@@ -220,7 +220,8 @@ namespace RouteDefense
         public static bool Sees(Tower t) => SeesWhy(t.e) != null;
         public static float TowerRange(Tower t, int m) => RANGE[DB.Mv(m).c] * (1 + Math.Min(0.25f, t.e.lv / 400f) + Rescue.Mod("range")) * UpK(t, 0) * (HasT(t, 2) ? 1.15f : 1);   // Flying: Far sight
         public static float RangeFor(Mon e) { var ms = e.mv.Where(m => DB.MoveUse(m) != null).ToList(); return ms.Count == 0 ? 40 : ms.Max(m => RANGE[DB.Mv(m).c] * (1 + Math.Min(0.25f, e.lv / 400f) + Rescue.Mod("range"))); }
-        public static float MaxRange(Tower t) => Math.Max(40, RangeFor(t.e));
+        // the tower's longest attack range, with range upgrades and the Flying bonus (as the HTML version); used for the range circle and range-based quirks
+        public static float MaxRange(Tower t) { float r = 40; foreach (int m in t.e.mv) if (DB.MoveUse(m) != null) r = Math.Max(r, TowerRange(t, m)); return r; }
         bool CanHit(Tower t, int m, Enemy e)
         {
             var M_ = DB.Mv(m);

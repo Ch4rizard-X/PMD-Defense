@@ -8,7 +8,7 @@ namespace RouteDefense
     {
         float saveT; static float resT;
 
-        // Battery saver also draws fewer pixels on phones: about 720 on the short side (never more than the screen has),
+        // Lower resolution (option, on by default): draws fewer pixels on phones, about 720 on the short side (never more than the screen has),
         // and the phone stretches the picture up. Most of the heat comes from the number of pixels drawn each frame.
         const int SAVER_SHORT = 720;
         // the game's full drawing size, taken once at launch before any change (so a smaller size can never shrink again)
@@ -23,7 +23,7 @@ namespace RouteDefense
         {
             if (!Application.isMobilePlatform || Save.G == null) return; ReadNative(); if (natS <= 0) return;
             bool land = Screen.width > Screen.height; int w, h;
-            if (Save.G.smooth) { w = land ? natL : natS; h = land ? natS : natL; }
+            if (!Save.G.lowres) { w = land ? natL : natS; h = land ? natS : natL; }
             else
             {
                 // keep the window's current shape, only fewer pixels
@@ -47,7 +47,7 @@ namespace RouteDefense
             Screen.autorotateToPortrait = Screen.autorotateToLandscapeLeft = Screen.autorotateToLandscapeRight = true;
             Screen.autorotateToPortraitUpsideDown = false; Screen.orientation = ScreenOrientation.AutoRotation;
             DB.LoadAll(); Save.Load();
-            Application.targetFrameRate = Save.G.smooth ? 60 : 30;   // Battery saver (default): 30 fps keeps the phone cooler
+            Application.targetFrameRate = Save.G.smooth ? 60 : 30;   // the 60 fps option (on by default); 30 fps is cooler but choppier
             ApplyResolution();
             Cfg.LoadCached(); StartCoroutine(Cfg.Fetch());   // balance numbers: last downloaded copy now, a fresh one in the background
             gameObject.AddComponent<AudioListener>();   // the scene has no camera with one

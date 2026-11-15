@@ -264,7 +264,8 @@ namespace RouteDefense
         static void OptionsPanel(Action after)
         {
             var p = Panel(after); var G = Save.G; p.Add(L("Options", 20));
-            var bsb = Box(); var bsr = Add(bsb, Row(true)); bsr.Add(L("Battery saver  ")); bsr.Add(Btn(G.smooth ? "Off (smooth)" : "On", () => { G.smooth = !G.smooth; Application.targetFrameRate = G.smooth ? 60 : 30; Game.ApplyResolution(); Save.Write(); OptionsPanel(after); }, G.smooth, true)); bsb.Add(L("30 fps instead of 60 and fewer pixels drawn, so the phone stays cooler (text a little softer)", 12, DIM)); p.Add(bsb);
+            var fb = Box(); var fr = Add(fb, Row(true)); fr.Add(L("60 fps  ")); fr.Add(Btn(G.smooth ? "On" : "Off (30 fps)", () => { G.smooth = !G.smooth; Application.targetFrameRate = G.smooth ? 60 : 30; Save.Write(); OptionsPanel(after); }, !G.smooth, true)); fb.Add(L("Smooth motion; 30 fps is a bit cooler but choppier", 12, DIM)); p.Add(fb);
+            var rb = Box(); var rr = Add(rb, Row(true)); rr.Add(L("Lower resolution  ")); rr.Add(Btn(G.lowres ? "On" : "Off", () => { G.lowres = !G.lowres; Game.ApplyResolution(); Save.Write(); OptionsPanel(after); }, !G.lowres, true)); rb.Add(L("Draws fewer pixels so the phone stays much cooler; text a little softer", 12, DIM)); p.Add(rb);
             var sb = Box(); var sr = Add(sb, Row(true)); sr.Add(L("Sound  ")); sr.Add(Btn(G.mute ? "Off" : "On", () => { G.mute = !G.mute; Gfx.SetMute(G.mute); Save.Write(); OptionsPanel(after); }, G.mute, true)); p.Add(sb);
             var mb = Box(); mb.Add(L("Menu size")); mb.Add(L("Buttons, text and panels (the map is not affected)", 12, DIM)); var mr = Add(mb, Row(true));
             foreach (var u in UISIZE) { var uk = u.k; mr.Add(Btn(u.n, () => { G.ui = uk; if (Settings != null) Settings.scale = UiScale(); Save.Write(); OptionsPanel(after); }, G.ui != uk, true)); }

@@ -303,7 +303,8 @@ namespace RouteDefense
     public class SaveData
     {
         public int v = 2, uid = 1, money, maps, wins, rp; public bool mute; public string ui = "m";   // menu size option
-        public bool smooth, meter; public float mx = -1, my = -1;   // Battery saver off (= smooth 60 fps); damage meter on, and where it was dragged (share of the screen)
+        public bool smooth = true, lowres = true, meter; public float mx = -1, my = -1;   // 60 fps; lower resolution (cooler phone); damage meter on, and where it was dragged (share of the screen)
+        public int gfx;   // graphics options version (0 in old saves and new ones): older saves get the new defaults once
         public List<string> tree = new List<string>();
         public List<Pair> mt = new List<Pair> { new Pair { k = 0, v = 1 } };   // per-map tiers: map -> highest tier you can pick (missing = map not open)
         public List<int> mtDone = new List<int>();                             // maps with tier 20 cleared
@@ -326,6 +327,7 @@ namespace RouteDefense
         {
             var s = PlayerPrefs.GetString(KEY, ""); G = string.IsNullOrEmpty(s) ? new SaveData() : JsonUtility.FromJson<SaveData>(s);
             if (G.v < 2) G = new SaveData();   // per-map tiers: saves from before start over (same as the HTML version)
+            if (G.gfx < 1) { G.smooth = true; G.lowres = true; G.gfx = 1; }   // the old Battery saver became two options: 60 fps and Lower resolution, both on
             if (G.tree == null) G.tree = new List<string>(); if (G.stars == null) G.stars = new List<Pair>(); if (G.tools == null) G.tools = new List<Pair>();
             if (G.mt == null || G.mt.Count == 0) G.mt = new List<Pair> { new Pair { k = 0, v = 1 } }; if (G.mtDone == null) G.mtDone = new List<int>();
             foreach (var e in G.box) { if (e.nat == 0) e.nat = DB.RollNat(); if (e.iv == null || e.iv.Length != 6) e.iv = DB.RollIV(); if (e.ht == null || e.ht.Length != 6) e.ht = new int[6]; }
