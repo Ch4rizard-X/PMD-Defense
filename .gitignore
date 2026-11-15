@@ -26,3 +26,14 @@ android/keys/
 keystore-pass.txt
 signing-key-backup/
 upd_token*
+
+# Godot port: code only (ROM art, sound, font and data stay out of the public repo)
+godot/img/
+godot/snd/
+godot/data/
+godot/fonts/
+godot/build/
+godot/.godot/
+*.ttf
+*.webp
+*.bin

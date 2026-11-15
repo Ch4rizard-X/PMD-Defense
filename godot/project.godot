@@ -1,0 +1,29 @@
+; Route Defense (Godot port of the HTML version)
+config_version=5
+
+[application]
+config/name="Route Defense"
+run/main_scene="res://boot.tscn"
+config/features=PackedStringArray("4.7", "GL Compatibility")
+config/icon="res://icon.png"
+
+[autoload]
+C="*res://scripts/core.gd"
+MG="*res://scripts/mapgen.gd"
+BT="*res://scripts/battle.gd"
+Snd="*res://scripts/snd.gd"
+K="*res://scripts/kit.gd"
+
+[display]
+window/size/viewport_width=400
+window/size/viewport_height=860
+window/handheld/orientation=6
+window/stretch/mode="canvas_items"
+window/stretch/aspect="expand"
+
+[rendering]
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"
+textures/canvas_textures/default_texture_filter=0
+textures/vram_compression/import_etc2_astc=true
+environment/defaults/default_clear_color=Color(0.04, 0.08, 0.2, 1)
