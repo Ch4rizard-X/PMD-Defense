@@ -192,11 +192,19 @@ func _settle_tinfo() -> void:
 	await get_tree().process_frame; await get_tree().process_frame
 	if my != _settle_n or not is_instance_valid(tinfo): return
 	_place_tinfo(); tinfo.modulate.a = 1.0
+func _sort_now(n: Node) -> void:
+	if n is Container: n.notification(Container.NOTIFICATION_SORT_CHILDREN)
+	elif n is Label: n.notification(Control.NOTIFICATION_RESIZED); n.update_minimum_size()
+	for c in n.get_children(): _sort_now(c)
 func _place_tinfo() -> void:
 	if not is_instance_valid(tinfo): return
 	var inner: float = tinfo.custom_minimum_size.x - 16
 	for c in tinfo_v.get_children():   # wrapping text gets its real width up front, so it never measures one letter per line
-		if c is Label and c.autowrap_mode != TextServer.AUTOWRAP_OFF: c.custom_minimum_size.x = inner
+		if c is Label and c.autowrap_mode != TextServer.AUTOWRAP_OFF: c.custom_minimum_size.x = inner; c.size.x = inner
+		elif c is FlowContainer or c is HBoxContainer: c.size.x = inner   # wrap rows measure their height at their current width
+	tinfo_v.size.x = inner
+	for i in 3:   # lay the panel out now instead of next frame, so its first height is already the real one
+		tinfo.size = Vector2(tinfo.custom_minimum_size.x, 0); tinfo.reset_size(); _sort_now(tinfo)
 	tinfo.size = Vector2(tinfo.custom_minimum_size.x, 0); tinfo.reset_size()
 	var vs := size if size.x > 0 else get_viewport_rect().size
 	tinfo.position = Vector2((vs.x - tinfo.size.x) / 2, _team_top - tinfo.size.y - 6)
