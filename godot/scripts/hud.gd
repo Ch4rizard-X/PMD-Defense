@@ -182,9 +182,15 @@ func layout() -> void:
 	_place_tinfo(); _settle_tinfo()   # and again two frames later: wrapped rows only know their height once their width is set
 	if meter: _meter_place()
 var _team_top := 0.0
+var _settle_n := 0
+func _open_tinfo() -> void:
+	tinfo.modulate.a = 0.0; tinfo.visible = true   # hidden until it has its final size (no big-then-small flash)
+	layout()
 func _settle_tinfo() -> void:
+	_settle_n += 1; var my := _settle_n
 	await get_tree().process_frame; await get_tree().process_frame
-	_place_tinfo()
+	if my != _settle_n or not is_instance_valid(tinfo): return
+	_place_tinfo(); tinfo.modulate.a = 1.0
 func _place_tinfo() -> void:
 	if not is_instance_valid(tinfo): return
 	var inner: float = tinfo.custom_minimum_size.x - 16
@@ -219,7 +225,7 @@ func tower_info() -> void:
 		for q in C.quirks(e.id): qs.append(q[0] + ": " + q[1])
 		var txt := "%s - tap the map to place ($%d). %s." % [C.SP[e.id].n, C.place_cost(e), ". ".join(qs)]
 		if ty.has(10) or ty.has(9): txt += " Can stand in %s." % ("water" if ty.has(10) else "lava")
-		tinfo_v.add_child(K.lbl(txt, 14)); tinfo.visible = true; layout(); return
+		tinfo_v.add_child(K.lbl(txt, 14)); _open_tinfo(); return
 	if t == null and B.get("selE") != null and B.selE.hp > 0:
 		var x: Dictionary = B.selE; var s: Dictionary = C.SP[x.id]; var A = C.DB.dex.abil.get(x.ab, null)
 		var tags := []
@@ -235,7 +241,7 @@ func tower_info() -> void:
 		if A: ab = " - " + A.n + ((": " + C.AB_TD[A.k].substr(6)) if (C.AB_TD.has(A.k) and C.AB_TD[A.k].begins_with("Wild")) else "")
 		tinfo_v.add_child(K.lbl("HP %d/%d%s" % [ceil(x.hp), x.max, ab], 13))
 		if tags.size(): tinfo_v.add_child(K.lbl(" - ".join(tags), 12, K.DIM))
-		tinfo.visible = true; layout(); return
+		_open_tinfo(); return
 	if t == null: tinfo.visible = false; return
 	var e: Dictionary = t.e; var s: Dictionary = C.SP[e.id]; var A = C.DB.dex.abil.get(e.ab, null); var H = C.DB.dex.held.get(e.it, null)
 	var tg := []
@@ -273,7 +279,7 @@ func tower_info() -> void:
 		B.paused = true; ui.mon_panel(e, func():
 			if BT.B: B.paused = false; tower_info(); refresh_hud()), true, true))
 	modes.add_child(K.btn("Recall ($%d)" % int(floor(t.paid * 0.7)), func(): BT.sell_tower(t); tower_info(); refresh_hud(), true, true))
-	tinfo.visible = true; layout()
+	_open_tinfo()
 
 # ---------- windows ----------
 func weather_panel() -> void:
