@@ -70,9 +70,24 @@ namespace RouteDefense
         static VisualElement Card(float w = 104)
         {
             var c = new VisualElement(); c.style.width = w; c.style.minHeight = 64; c.style.backgroundColor = WIN; Edge(c, EDGE, 2, 8); Pad(c, 6);
-            c.style.alignItems = Align.Center; c.style.marginRight = c.style.marginBottom = 8; return c;
+            c.style.alignItems = Align.Center; c.style.marginRight = c.style.marginBottom = 8; c.userData = w; return c;   // userData: the card's base width, for Grid's fitting
         }
-        static VisualElement Grid() { var g = Row(true); g.style.alignItems = Align.FlexStart; return g; }
+        static VisualElement Grid()
+        {
+            var g = Row(true); g.style.alignItems = Align.FlexStart; g.style.alignSelf = Align.Stretch;
+            // fill the whole row: as many columns as fit (a card may shrink to 85% to fit one more), then the cards stretch so no strip is left empty
+            g.RegisterCallback<GeometryChangedEvent>(_ => FitGrid(g)); return g;
+        }
+        static void FitGrid(VisualElement g)
+        {
+            float W = g.layout.width; if (float.IsNaN(W) || W <= 0) return;
+            float baseW = 0; foreach (var c in g.Children()) if (c.userData is float f) { baseW = f; break; }
+            if (baseW <= 0) return;
+            const float M = 8;   // a card's right margin
+            int cols = Mathf.Max(1, Mathf.FloorToInt((W + 0.5f) / (baseW * 0.85f + M)));
+            float cw = Mathf.Floor(W / cols - M);
+            foreach (var c in g.Children()) if (c.userData is float) c.style.width = cw;
+        }
         static Label TypeTag(int t)
         {
             var l = new Label(DB.TYPES[t]); l.style.fontSize = 11; l.style.backgroundColor = Hex(DB.TCOL[t]); l.style.color = Color.white; Pad(l, 1); l.style.paddingLeft = l.style.paddingRight = 5;
@@ -225,7 +240,7 @@ namespace RouteDefense
             top.Add(UiImg("coin", 20)); top.Add(L(" " + G.money.ToString("N0"), 16, ACC)); top.Add(Gap()); top.Add(UiImg("badge", 20)); top.Add(L(" Rescue Points " + G.rp)); top.Add(Gap());
             top.Add(L("Maps " + Prog.OpenCount() + "/" + DB.TS.Count)); top.Add(Gap()); top.Add(L("Best tier " + Prog.BestTier())); top.Add(Gap());
             top.Add(L("Pokédex " + G.own.Count + "/" + DB.Mons.Count(m => m.anim))); top.Add(Gap());
-            top.Add(Btn("⚙ Options", () => OptionsPanel(() => ShowHub()), true, true));
+            top.Add(Btn("Options", () => OptionsPanel(() => ShowHub()), true, true));
             var tabs = Add(s, Row(true));
             foreach (var (k, n) in new[] { ("routes", "Routes"), ("box", "Box"), ("dex", "Pokédex"), ("rescue", "Rescue"), ("shop", "Shop"), ("bag", "Bag") })
             {
@@ -260,7 +275,7 @@ namespace RouteDefense
                     if (Prog.MapGroup(i) != gi) continue;
                     int idx = i; var S = DB.TS[i]; bool open = Prog.MapOpen(i);
                     var c = Card(150); Edge(c, Prog.COLS[gi], 2, 8);
-                    var sw = new Image { image = MapGen.Swatch(i), scaleMode = ScaleMode.StretchToFill }; sw.style.width = 136; sw.style.height = 136 / 3f; Edge(sw, new Color(0, 0, 0, .5f), 1, 4); c.Add(sw);
+                    var sw = new Image { image = MapGen.Swatch(i), scaleMode = ScaleMode.StretchToFill }; sw.style.alignSelf = Align.Stretch; sw.style.height = 136 / 3f; sw.RegisterCallback<GeometryChangedEvent>(_ => { if (sw.layout.width > 0) sw.style.height = sw.layout.width / 3f; }); Edge(sw, new Color(0, 0, 0, .5f), 1, 4); c.Add(sw);
                     c.Add(L(S.name, 15)); c.Add(L(S.game == "E" ? "Explorers of Sky" : "Rescue Team", 12, DIM)); c.Add(Types(S.types));
                     if (!open) { c.Add(L(i > 0 && Prog.MapGroup(i - 1) == gi ? "Win the map before to open" : "Opens at tier " + GR.gate + " on any " + Prog.GROUPS[Math.Max(0, gi - 1)].name + " map", 12, Hex("#ffb0b0"))); c.style.opacity = .45f; }
                     else { int ct = Save.G.mtDone.Contains(i) ? Prog.MAXTIER : Prog.MapTier(i) - 1; c.Add(L(ct > 0 ? "Tier " + ct + " cleared" : "New", 12, ct > 0 ? ACC : Hex("#99ff99"))); Click(c, () => RoutePanel(idx)); }
@@ -275,7 +290,7 @@ namespace RouteDefense
             int gi = Prog.MapGroup(i); var GR = Prog.GROUPS[gi];
             var p = Panel(); var hr0 = Add(p, Row(true)); hr0.Add(L(S.name + "  ", 20)); hr0.Add(L(GR.name, 15, Prog.COLS[gi])); p.Add(Types(S.types));
             if (gi > 0) p.Add(L($"{GR.name} map: harder by nature - every tier here fights like a higher tier on earlier maps (levels, species and traits), with shorter paths, more entrances and water and {Mathf.RoundToInt((GR.count - 1) * 100)}% more per wave. Rewards x{GR.pay}.", 13, DIM));
-            var pm = MapGen.Gen(i, false, routeSeed, null, MapGen.ScreenAspect(), routeTier);
+            var pm = MapGen.Gen(i, false, routeSeed, null, PlayAspect(), routeTier);
             var prev = new Image { image = pm.tex, scaleMode = ScaleMode.ScaleToFit }; prev.style.width = new Length(100, LengthUnit.Percent); prev.style.height = 260; Edge(prev, EDGE, 2, 6);
             var over = new VisualElement(); Full(over); over.pickingMode = PickingMode.Ignore; prev.Add(over);   // path line drawn on a layer above the map
             over.generateVisualContent += ctx =>
@@ -628,7 +643,7 @@ namespace RouteDefense
         static void BeginBattle()
         {
             var tm = team.Select(u => Save.G.box.Find(e => e.u == u)).Where(e => e != null).ToList();
-            Battle.Start(routeSet, routeTier, routeSeed, tm, Portrait, MapGen.ScreenAspect()); View.ResetZoom();
+            Battle.Start(routeSet, routeTier, routeSeed, tm, Portrait, PlayAspect()); View.ResetZoom();
             BuildBattle();
         }
         /* the map fills the screen; the buttons, team bar and info float over it */
@@ -646,7 +661,7 @@ namespace RouteDefense
             bau = Add(hud, Btn("Auto: " + (Battle.B.auto ? "on" : "off"), () => { var B = Battle.B; B.auto = !B.auto; bau.text = "Auto: " + (B.auto ? "on" : "off"); if (B.auto) B.StartWave(); }, true, true));
             bwx = Add(hud, Btn("Weather", WeatherPanel, true, true));
             bmt = Add(hud, Btn("Meter", () => { Save.G.meter = !Save.G.meter; Save.Write(); MeterShow(); }, !Save.G.meter, true));
-            hud.Add(Btn("☰", PauseMenu, true, true));
+            hud.Add(Btn("Menu", PauseMenu, true, true));
             // wave progress: how much of this wave is done (a thin line under the one-row bar)
             var wp = Add(hud, new VisualElement()); wp.style.height = 3; wp.style.position = Position.Absolute; wp.style.left = 8; wp.style.right = 8; wp.style.bottom = 1; wp.style.backgroundColor = new Color(0, 0, 0, .35f); hud.style.paddingBottom = 7;
             wprog = Add(wp, new VisualElement()); wprog.style.height = 3; wprog.style.backgroundColor = ACC;
@@ -858,7 +873,7 @@ namespace RouteDefense
         {
             var B = Battle.B; if (B == null || B.over || B.paused) return;
             B.paused = true; var p = Panel(() => { if (Battle.B != null) Battle.B.paused = false; }); p.Add(L("Paused", 20));
-            var r = Add(p, Row()); r.Add(Btn("Resume", ClosePanel)); r.Add(Btn("⚙ Options", () => OptionsPanel(() => { if (Battle.B != null) Battle.B.paused = false; }), true)); r.Add(Btn("Give up", () => { ClosePanel(); Battle.B.GiveUp(); }, true));
+            var r = Add(p, Row()); r.Add(Btn("Resume", ClosePanel)); r.Add(Btn("Options", () => OptionsPanel(() => { if (Battle.B != null) Battle.B.paused = false; }), true)); r.Add(Btn("Give up", () => { ClosePanel(); Battle.B.GiveUp(); }, true));
         }
         public static void OnPause() { if (InBattle) PauseMenu(); }
         /* a knocked-out wild Pokémon asks to join: the battle pauses and you decide */
@@ -970,6 +985,15 @@ namespace RouteDefense
             if (full) box.Add(L(tab == "dmg" ? "Team: " + ((int)tD).ToString("N0") + " damage" : tab == "ko" ? "Team: " + (int)tK + " knockouts" : "Control = seconds enemies spent stopped or slowed (stronger slows count more)", 12, DIM));
         }
         /* map under the one-row top bar, the team row right under the map, the bar shrinking to fit */
+        // the map is made in the shape of the space it gets: the screen minus the top bar and the team row
+        // (sizes measured in the last battle; first battle uses typical sizes)
+        static float hudSpace = 54, teamSpace = 112;
+        static float PlayAspect()
+        {
+            float w = Root != null ? Root.layout.width : 0, h = Root != null ? Root.layout.height : 0;
+            if (float.IsNaN(w) || w <= 0 || float.IsNaN(h) || h <= 0) return MapGen.ScreenAspect();
+            h = Mathf.Max(1, h - hudSpace - teamSpace); return Mathf.Max(w, h) / Mathf.Min(w, h);
+        }
         static void BattleLayout()
         {
             if (hud == null || hud.layout.width <= 0 || Root.layout.width <= 0) return;
@@ -980,6 +1004,7 @@ namespace RouteDefense
             hud.style.width = need;   // full natural width; the scale below makes it fit the screen
             hud.style.scale = new Scale(new Vector3(k, k, 1));
             float top = hud.layout.y + hud.layout.height * k + 4, teamH = teamSV != null ? teamSV.layout.height + 10 : 0;
+            if (top > 10) hudSpace = top; if (teamH > 10) teamSpace = teamH;
             stage.style.top = top; stage.style.bottom = teamH; stage.style.height = StyleKeyword.Auto;
             if (bossBar != null) bossBar.style.top = top + 2;
             // the team row sits right under the map (the camera shows exactly the map, top-aligned in the stage)
