@@ -26,7 +26,7 @@ namespace RouteDefense
 
     public static class Updater
     {
-        public const string INFO_URL = "https://raw.githubusercontent.com/Ch4rizard-X/pmd-defense/main/settings/apk.json";
+        public const string INFO_URL = "https://raw.githubusercontent.com/Ch4rizard-X/PMD-Defense/main/settings/apk.json";
         public static ApkInfo Latest;            // set when a newer APK is online
         public static bool Checked, Busy;
         public static float Progress;            // 0..1 while downloading

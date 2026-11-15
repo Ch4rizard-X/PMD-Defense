@@ -38,7 +38,7 @@ namespace RouteDefense
     public static class Cfg
     {
         // the public settings file (raw link); empty = only the built-in numbers and the last downloaded copy
-        public const string SETTINGS_URL = "https://raw.githubusercontent.com/Ch4rizard-X/pmd-defense/main/settings/settings.json";
+        public const string SETTINGS_URL = "https://raw.githubusercontent.com/Ch4rizard-X/PMD-Defense/main/settings/settings.json";
         public static RDConfig C = new RDConfig();
         public static string Status = "built-in";
         static string CachePath => Path.Combine(Application.persistentDataPath, "settings.json");

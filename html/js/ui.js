@@ -78,7 +78,7 @@ function showTitle() {
   fitTitle(); titleWalkers(t); titleMotes(t); checkUpdate(t);
 }
 /* online code updates (Android app / bundled file): GitHub holds the newest code; the graphics stay in the app */
-const UPD = 'https://raw.githubusercontent.com/Ch4rizard-X/pmd-defense/main/html/';
+const UPD = 'https://raw.githubusercontent.com/Ch4rizard-X/PMD-Defense/main/html/';
 async function checkUpdate(t) {
   if (!window.__BUNDLE) return;
   const st = t.querySelector('.tstack'), ver = el('div', 'tver', 'v' + window.__CODEV_RUN); st.appendChild(ver);
