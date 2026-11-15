@@ -82,7 +82,9 @@ namespace RouteDefense
         }
 
         /* aspect = long side / short side of the screen: the map is made in that shape so it fills it */
-        public static int MapCols(float aspect) => Mathf.Clamp(Mathf.RoundToInt((aspect * 21 - 2) / 5f), 5, 10);
+        // the path is laid out in 5-tile blocks; MapExtra adds plain columns (same tileset) at the exit end so the shape matches the screen to one tile
+        public static int MapCols(float aspect) => Mathf.Clamp(Mathf.FloorToInt((aspect * 21 - 2) / 5f), 5, 10);
+        public static int MapExtra(float aspect, int cw) => Mathf.Clamp(Mathf.RoundToInt(aspect * 21) - (cw * 5 + 2), 0, 6);
         public static float ScreenAspect() => Mathf.Max(Screen.width, Screen.height) / (float)Mathf.Max(1, Mathf.Min(Screen.width, Screen.height));
         public static MapData Gen(int setIdx, bool portrait, int seed, string kind = null, float aspect = 1.76f, int tier = 1)
         {
@@ -90,7 +92,7 @@ namespace RouteDefense
             float hard = Mathf.Clamp01((tier - 4) / 16f) * 0.6f + md * 0.4f;                        // tier gives up to 60%, the map's group the other 40%
             float effTier = tier * 0.75f + grp * 4, lenK = 1 - 0.3f * md;                           // third entrances: late tiers on later maps; paths up to 30% shorter
             var R = new Rng((uint)seed); var S = DB.TS[setIdx];
-            int cw = MapCols(aspect); const int CS = 5, H = 21, ch = 4, ox = 1, oy = 0; int W = cw * CS + 2;
+            int cw = MapCols(aspect); const int CS = 5, H = 21, ch = 4, ox = 1, oy = 0; int W = cw * CS + 2 + MapExtra(aspect, cw);   // the path's last straight runs on to the far edge
             var t = new int[H, W];
             // layout kind: one path, a split that rejoins, a second entrance, or a third entrance; plain paths fade out as fights get harder
             if (kind == null)
