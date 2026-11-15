@@ -122,18 +122,33 @@ class TitleWalkers extends Control:   # Pokémon walking across the bottom of th
 func check_update(st: VBoxContainer) -> void:
 	var run_v: int = Engine.get_meta("code_v", 1)
 	var ver := K.lbl("v%d" % run_v, 12, K.DIM, false); ver.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER; st.add_child(ver)
-	var req := HTTPRequest.new(); add_child(req); req.timeout = 10
-	req.request_completed.connect(func(res, code, _h, body):
-		req.queue_free()
-		if res != HTTPRequest.RESULT_SUCCESS or code != 200 or not is_instance_valid(st): return
-		var r = JSON.parse_string(body.get_string_from_utf8())
-		if typeof(r) != TYPE_DICTIONARY or int(r.get("v", 0)) <= run_v: return
-		if int(r.get("base", 0)) > int(Engine.get_meta("built_v", 1)) and r.has("base"):
-			ver.text = "v%d - v%d is out but needs a new app download" % [run_v, int(r.v)]; return
-		var b := K.btn("Update available (v%d)" % int(r.v), func(): pass, true)
-		st.add_child(b); st.move_child(b, ver.get_index())
-		b.pressed.connect(func(): _download_patch(r, b)))
-	req.request(UPD + "version.json?t=%d" % Time.get_unix_time_from_system())
+	var chk := K.btn("Check for updates", func(): pass, true, true); chk.size_flags_horizontal = Control.SIZE_SHRINK_CENTER; st.add_child(chk)
+	var state := {"upd": null}
+	var run := func(manual: bool) -> void:
+		if manual: chk.disabled = true; chk.text = "Checking..."
+		var req := HTTPRequest.new(); add_child(req); req.timeout = 10
+		req.request_completed.connect(func(res, code, _h, body):
+			req.queue_free()
+			if not is_instance_valid(st): return
+			chk.disabled = false; chk.text = "Check for updates"
+			if res != HTTPRequest.RESULT_SUCCESS or code != 200:
+				if manual: K.toast("Couldn't check for updates (offline?)")
+				return
+			var r = JSON.parse_string(body.get_string_from_utf8())
+			if typeof(r) != TYPE_DICTIONARY: return
+			if int(r.get("v", 0)) <= run_v:
+				if manual: K.toast("You have the newest version (v%d)" % run_v)
+				return
+			if r.has("base") and int(r.base) > int(Engine.get_meta("built_v", 1)):
+				ver.text = "v%d - v%d is out but needs a new app download" % [run_v, int(r.v)]; return
+			if state.upd != null and is_instance_valid(state.upd): state.upd.text = "Update available (v%d)" % int(r.v); return
+			var b := K.btn("Update available (v%d)" % int(r.v), func(): pass, true)
+			b.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+			st.add_child(b); st.move_child(b, ver.get_index()); state.upd = b
+			b.pressed.connect(func(): _download_patch(r, b)))
+		req.request(UPD + "version.json?t=%d" % Time.get_unix_time_from_system())
+	chk.pressed.connect(func(): run.call(true))
+	run.call(false)   # also checks by itself when the title screen opens
 func _download_patch(r: Dictionary, b: Button) -> void:
 	b.disabled = true; b.text = "Downloading..."
 	var req := HTTPRequest.new(); add_child(req); req.timeout = 60; req.download_file = "user://patch_new.pck"
