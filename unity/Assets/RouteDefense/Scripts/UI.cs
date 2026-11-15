@@ -985,14 +985,14 @@ namespace RouteDefense
             if (full) box.Add(L(tab == "dmg" ? "Team: " + ((int)tD).ToString("N0") + " damage" : tab == "ko" ? "Team: " + (int)tK + " knockouts" : "Control = seconds enemies spent stopped or slowed (stronger slows count more)", 12, DIM));
         }
         /* map under the one-row top bar, the team row right under the map, the bar shrinking to fit */
-        // the map is made in the shape of the space it gets: the screen minus the top bar and the team row
-        // (sizes measured in the last battle; first battle uses typical sizes)
-        static float hudSpace = 54, teamSpace = 112;
+        // the map is made in the shape of the space it gets: the screen below the top bar (the team row floats over the map)
+        // (bar height measured in the last battle; the first battle uses a typical size)
+        static float hudSpace = 54;
         static float PlayAspect()
         {
             float w = Root != null ? Root.layout.width : 0, h = Root != null ? Root.layout.height : 0;
             if (float.IsNaN(w) || w <= 0 || float.IsNaN(h) || h <= 0) return MapGen.ScreenAspect();
-            h = Mathf.Max(1, h - hudSpace - teamSpace); return Mathf.Max(w, h) / Mathf.Min(w, h);
+            h = Mathf.Max(1, h - hudSpace); return Mathf.Max(w, h) / Mathf.Min(w, h);
         }
         static void BattleLayout()
         {
@@ -1004,15 +1004,15 @@ namespace RouteDefense
             hud.style.width = need;   // full natural width; the scale below makes it fit the screen
             hud.style.scale = new Scale(new Vector3(k, k, 1));
             float top = hud.layout.y + hud.layout.height * k + 4, teamH = teamSV != null ? teamSV.layout.height + 10 : 0;
-            if (top > 10) hudSpace = top; if (teamH > 10) teamSpace = teamH;
-            stage.style.top = top; stage.style.bottom = teamH; stage.style.height = StyleKeyword.Auto;
+            if (top > 10) hudSpace = top;
+            stage.style.top = top; stage.style.bottom = 0; stage.style.height = StyleKeyword.Auto;   // the map takes everything under the bar
             if (bossBar != null) bossBar.style.top = top + 2;
-            // the team row sits right under the map (the camera shows exactly the map, top-aligned in the stage)
-            var mr = View.MapRectPanel(W, Root.layout.height); float y = mr.yMax + 4;
+            // the team row floats over the bottom edge of the map (the camera shows exactly the map, top-aligned in the stage)
+            var mr = View.MapRectPanel(W, Root.layout.height);
             if (bottomBox != null && mr.height > 0)
             {
                 float infoH = info != null && info.style.display == DisplayStyle.Flex ? info.layout.height + 4 : 0;
-                bottomBox.style.bottom = StyleKeyword.Auto; bottomBox.style.top = Mathf.Min(y - infoH, Root.layout.height - teamH - infoH);
+                bottomBox.style.bottom = StyleKeyword.Auto; bottomBox.style.top = Mathf.Min(mr.yMax, Root.layout.height) - teamH - infoH;
             }
         }
         /* ---------- per frame ---------- */
