@@ -83,7 +83,7 @@ namespace RouteDefense
         static VisualElement Grid()
         {
             var g = Row(true); g.style.alignItems = Align.FlexStart; g.style.alignSelf = Align.Stretch;
-            // fill the whole row: as many columns as fit (a card may shrink to 85% to fit one more), then the cards stretch so no strip is left empty
+            // fill the whole row: as many columns as fit (a wide card may shrink to 85% to fit one more), then the cards stretch so no strip is left empty
             g.RegisterCallback<GeometryChangedEvent>(_ => FitGrid(g)); return g;
         }
         static void FitGrid(VisualElement g)
@@ -92,7 +92,9 @@ namespace RouteDefense
             float baseW = 0; foreach (var c in g.Children()) if (c.userData is float f) { baseW = f; break; }
             if (baseW <= 0) return;
             const float M = 8;   // a card's right margin
-            int cols = Mathf.Max(1, Mathf.FloorToInt((W + 0.5f) / (baseW * 0.85f + M)));
+            // wide cards (maps) may shrink to 85% to fit one more column; narrow ones (Pokémon) never shrink, or long names break mid-word
+            float minW = baseW >= 140 ? baseW * 0.85f : baseW;
+            int cols = Mathf.Max(1, Mathf.FloorToInt((W + 0.5f) / (minW + M)));
             float cw = Mathf.Floor(W / cols - M);
             foreach (var c in g.Children()) if (c.userData is float) c.style.width = cw;
         }
