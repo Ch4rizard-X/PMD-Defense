@@ -6,7 +6,6 @@ namespace RouteDefense
     public class Game : MonoBehaviour
     {
         float saveT;
-        public static Game I;   // runs downloads (coroutines) for the menus
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         static void Boot()
@@ -17,7 +16,6 @@ namespace RouteDefense
 
         void Awake()
         {
-            I = this;
             Application.targetFrameRate = 60;
             Screen.autorotateToPortrait = Screen.autorotateToLandscapeLeft = Screen.autorotateToLandscapeRight = true;
             Screen.autorotateToPortraitUpsideDown = false; Screen.orientation = ScreenOrientation.AutoRotation;
@@ -37,8 +35,6 @@ namespace RouteDefense
 #endif
             UI.Init(gameObject);
             UI.ShowTitle();
-            // new APK online? the title screen then shows "Update"
-            StartCoroutine(Updater.Check(newer => { if (!newer) Updater.CleanUp(); else if (UI.OnTitle) UI.ShowTitle(); }));
         }
         void Update()
         {

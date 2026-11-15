@@ -115,11 +115,10 @@ namespace RouteDefense
             return s;
         }
 
-        public static bool OnTitle;
         static Action<float> screenTick;   // per-frame animation of the current screen (title motes, walkers...)
         static VisualElement Show(int art = 0)
         {
-            InBattle = false; OnTitle = false; screenTick = null; screen.Clear(); screen.style.backgroundColor = BG; Pad(screen, 12); screen.style.flexDirection = FlexDirection.Column;
+            InBattle = false; screenTick = null; screen.Clear(); screen.style.backgroundColor = BG; Pad(screen, 12); screen.style.flexDirection = FlexDirection.Column;
             // the ROM artwork, darkened, behind the menus
             if (art > 0) { screen.style.backgroundImage = new StyleBackground(Gfx.Tex("Ui/art" + art)); screen.style.unityBackgroundImageTintColor = new Color(.13f, .17f, .3f); screen.style.backgroundSize = new BackgroundSize(BackgroundSizeType.Cover); }
             else screen.style.backgroundImage = StyleKeyword.None;
@@ -142,47 +141,10 @@ namespace RouteDefense
             t.schedule.Execute(() => t.RemoveFromHierarchy()).StartingIn(3000);
         }
 
-        /* ---------- app update (Android) ---------- */
-        static void UpdatePanel(ApkInfo i)
-        {
-            var p = Panel(null, Updater.Busy);
-            p.Add(L("Update " + i.version, 22, ACC));
-            p.Add(L("Download: " + (i.bytes / 1048576f).ToString("0") + " MB - your save stays", 13, DIM));
-            if (!string.IsNullOrEmpty(i.notes)) { var nb = Box(); nb.Add(L(i.notes, 14)); p.Add(nb); }
-            var st = L("", 14); p.Add(st);
-            var bar = Add(p, new VisualElement()); bar.style.height = 14; bar.style.backgroundColor = new Color(0, 0, 0, .35f); Edge(bar, EDGE, 1, 7); bar.style.marginTop = bar.style.marginBottom = 6; bar.style.display = DisplayStyle.None;
-            var fill = Add(bar, new VisualElement()); fill.style.height = new Length(100, LengthUnit.Percent); fill.style.backgroundColor = ACC; Edge(fill, Color.clear, 0, 6); fill.style.width = 0;
-            var row = Add(p, Row(true));
-            void Install()
-            {
-                if (!Updater.CanInstall)
-                {
-                    // Android 8+: one-time switch for this app, then come back and tap Install
-                    st.text = "Android needs your OK once: switch on \"Allow from this source\" for Route Defense, then come back and tap Install.";
-                    row.Clear(); row.Add(Btn("Open the setting", Updater.AskPermission)); row.Add(Btn("Install", Install, true)); return;
-                }
-                string err = Updater.Install(); st.text = err == "" ? "Tap Install on Android's screen." : "Couldn't open the installer: " + err;
-            }
-            void Ready() { bar.style.display = DisplayStyle.None; st.text = "Downloaded and checked."; row.Clear(); row.Add(Btn("Install", Install)); row.Add(Btn("Later", ClosePanel, true)); }
-            void Start()
-            {
-                row.Clear(); bar.style.display = DisplayStyle.Flex; st.text = "Downloading...";
-                bar.schedule.Execute(() => { fill.style.width = new Length(Updater.Progress * 100, LengthUnit.Percent); if (Updater.Busy) st.text = Updater.Progress < 1 ? "Downloading... " + (Updater.Progress * 100).ToString("0") + "%" : Updater.Status; }).Every(100).Until(() => !Updater.Busy);
-                Game.I.StartCoroutine(Updater.Download(i, err =>
-                {
-                    if (err == null) Ready();
-                    else { bar.style.display = DisplayStyle.None; st.text = err; row.Clear(); row.Add(Btn("Try again", Start)); row.Add(Btn("Later", ClosePanel, true)); }
-                }));
-            }
-            if (Updater.Busy) { bar.style.display = DisplayStyle.Flex; st.text = "Downloading..."; }
-            else if (Updater.Downloaded(i)) Ready();
-            else { row.Add(Btn("Download", Start)); row.Add(Btn("Later", ClosePanel, true)); }
-        }
-
         /* ---------- title / starter ---------- */
         public static void ShowTitle()
         {
-            var s = Show(); OnTitle = true; Pad(s, 0); s.style.alignItems = Align.Center; s.style.justifyContent = Justify.Center; Gfx.PlayMusic("_title");
+            var s = Show(); Pad(s, 0); s.style.alignItems = Align.Center; s.style.justifyContent = Justify.Center; Gfx.PlayMusic("_title");
             // the ROM's title-menu artworks, shown whole at a sharp whole-number scale in a framed window; a darkened copy fills the screen
             var arts = new[] { Gfx.Tex("Ui/art1"), Gfx.Tex("Ui/art2"), Gfx.Tex("Ui/art3") };
             var bg = new VisualElement(); Full(bg); bg.pickingMode = PickingMode.Ignore; s.Add(bg);
@@ -197,7 +159,6 @@ namespace RouteDefense
             var picI = arts.Select(t => { var im = new Image { image = t, scaleMode = ScaleMode.StretchToFill }; Full(im); pic.Add(im); return im; }).ToArray();
             stack.Add(L("wild Pokémon are coming down the path", 16, DIM));
             stack.Add(Btn(Save.G.box.Count > 0 ? "Continue" : "New Game", () => { if (Save.G.box.Count > 0) ShowHub(); else ShowStarter(); }));
-            if (Updater.Latest != null) { var ub = Btn("⬇ Update to " + Updater.Latest.version, () => UpdatePanel(Updater.Latest), true); ub.style.marginTop = 6; stack.Add(ub); }
             if (Save.G.box.Count > 0) stack.Add(L(Prog.OpenCount() + " maps open - best tier " + Prog.BestTier() + " - " + Save.G.box.Count + " Pokémon - Pokédex " + Save.G.own.Count, 13, DIM));
             // floating light motes (simple shapes, no art)
             var P = new List<(VisualElement e, float x, float y, float r, float v, float ph)>();
@@ -283,17 +244,7 @@ namespace RouteDefense
             var mb = Box(); mb.Add(L("Menu size")); mb.Add(L("Buttons, text and panels (the map is not affected)", 12, DIM)); var mr = Add(mb, Row(true));
             foreach (var u in UISIZE) { var uk = u.k; mr.Add(Btn(u.n, () => { G.ui = uk; if (Settings != null) Settings.scale = UiScale(); Save.Write(); OptionsPanel(after); }, G.ui != uk, true)); }
             p.Add(mb);
-            if (Updater.Supported)
-            {
-                var ub = Box(); var ur = Add(ub, Row(true)); ur.Add(L("App version " + Updater.Installed + "  "));
-                ur.Add(Btn(Updater.Latest != null ? "Update to " + Updater.Latest.version : "Check for updates", () =>
-                {
-                    if (Updater.Latest != null) { UpdatePanel(Updater.Latest); return; }
-                    Toast("Checking...");
-                    Game.I.StartCoroutine(Updater.Check(newer => { if (newer) UpdatePanel(Updater.Latest); else Toast(Updater.Status); }));
-                }, false, true));
-                ub.Add(L("Balance numbers update by themselves; new features come as a new app version", 12, DIM)); p.Add(ub);
-            }
+            var cb = Box(); cb.Add(L("Balance settings: " + Cfg.Status, 13, DIM)); cb.Add(L("Balance numbers update by themselves when online; new features come with a new build", 12, DIM)); p.Add(cb);
             p.Add(Btn("Close", ClosePanel, true));
         }
         static VisualElement Gap(float w = 14) { var v = new VisualElement(); v.style.width = w; return v; }

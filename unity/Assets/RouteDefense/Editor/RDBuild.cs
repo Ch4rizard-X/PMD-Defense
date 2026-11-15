@@ -50,15 +50,6 @@ namespace RouteDefense.EditorTools
             else { PlayerSettings.Android.useCustomKeystore = false; Debug.LogWarning("Route Defense: signing key not found in " + KEY + " - using Unity's debug key (updates won't install over other PCs' builds)"); }
         }
 
-        // after an Android build: Builds/apk.json with what the in-game updater checks (version, size, SHA-256); the download link is added when publishing
-        static void WriteApkInfo(string apk)
-        {
-            if (!File.Exists(apk)) return;
-            string sha; using (var f = File.OpenRead(apk)) using (var h = System.Security.Cryptography.SHA256.Create()) sha = System.BitConverter.ToString(h.ComputeHash(f)).Replace("-", "").ToLowerInvariant();
-            var i = new ApkInfo { versionCode = PlayerSettings.Android.bundleVersionCode, version = PlayerSettings.bundleVersion, bytes = new FileInfo(apk).Length, sha256 = sha };
-            File.WriteAllText("Builds/apk.json", JsonUtility.ToJson(i, true));
-        }
-
         [MenuItem("Route Defense/Build Windows")]
         public static void Windows()
         {
@@ -69,7 +60,6 @@ namespace RouteDefense.EditorTools
         static void Report(BuildReport r)
         {
             var s = r.summary;
-            if (s.result == BuildResult.Succeeded && s.platform == BuildTarget.Android) WriteApkInfo(s.outputPath);
             if (s.result == BuildResult.Succeeded) { Debug.Log($"Route Defense: build done — {s.outputPath} ({s.totalSize / 1048576} MB)"); EditorUtility.RevealInFinder(s.outputPath); }
             else Debug.LogError($"Route Defense: build {s.result} with {s.totalErrors} errors — see the Console above");
         }
