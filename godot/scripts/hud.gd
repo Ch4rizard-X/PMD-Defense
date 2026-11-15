@@ -99,6 +99,8 @@ func build_team() -> void:
 	refresh_hud(); layout.call_deferred()
 # team row: swipe anywhere on it to scroll (with a little glide); a tap that didn't move picks the card
 var _rdrag = null; var _rvel := 0.0
+func _mv_is(t, m) -> bool: return _mv_open.size() == 2 and is_same(_mv_open[0], t) and _mv_open[1] == m
+var _mv_open := []   # [tower, move id] whose description is shown in the info panel
 func _row_input(ev: InputEvent, e) -> void:
 	if ev is InputEventMouseButton and ev.button_index == MOUSE_BUTTON_LEFT:
 		if ev.pressed: _rdrag = {"x": ev.global_position.x, "s": teamsv.scroll_horizontal, "moved": false, "lx": ev.global_position.x, "t": Time.get_ticks_msec()}; _rvel = 0.0
@@ -287,7 +289,15 @@ func tower_info() -> void:
 	xp.value = 100 if e.lv >= C.MAXLV else clampf((e.xp - x0) / float(max(1, x1 - x0)), 0, 1) * 100; xr.add_child(xp)
 	xr.add_child(K.lbl("Max level" if e.lv >= C.MAXLV else "%s XP to Lv %d" % [ui._num(x1 - e.xp), e.lv + 1], 12, K.DIM, false))
 	var mvs := K.flow(3); tinfo_v.add_child(mvs)
-	for m in e.mv: mvs.add_child(K.type_tag(C.mv(m).t, C.mv(m).n))
+	for m in e.mv:   # tap a move to read what it does (tap again to hide)
+		var chip := K.type_tag(C.mv(m).t, C.mv(m).n); chip.mouse_filter = Control.MOUSE_FILTER_STOP
+		if _mv_is(t, m): chip.get_theme_stylebox("panel").border_color = Color.WHITE; chip.get_theme_stylebox("panel").set_border_width_all(2)
+		chip.gui_input.connect(func(ev):
+			if ev is InputEventMouseButton and not ev.pressed and ev.button_index == MOUSE_BUTTON_LEFT:
+				Snd.sfx("tap"); _mv_open = [] if _mv_is(t, m) else [t, m]; tower_info())
+		mvs.add_child(chip)
+	if _mv_open.size() and is_same(_mv_open[0], t) and e.mv.has(_mv_open[1]):
+		var md := K.lbl("%s: %s" % [C.mv(_mv_open[1]).n, C.move_desc(_mv_open[1])], 12, K.DIM); tinfo_v.add_child(md)
 	var ups := K.flow(4); tinfo_v.add_child(ups)
 	for k in 3:
 		var lv: int = t.up[k]; var c: int = BT.upgrade_cost(t, k)
