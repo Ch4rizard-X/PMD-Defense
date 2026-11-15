@@ -615,8 +615,8 @@ func tick(dt: float) -> void:
 				if B.pwx and B.wave >= B.pwx.until: B.pwx = null   # your weather ends with its last wave
 				if B.wave >= B.waves.size(): finish(true); return
 				B.phase = "build"
+				music(C.DB.ts[B.set].name)   # before the next wave starts, or it would replace the heavy / boss song
 				if B.auto: start_wave()
-				music(C.DB.ts[B.set].name)
 	sync_weather()
 	var vines := []   # Grass: Vines
 	for t in B.towers: if has_t(t, 11): vines.append([t.x, t.y, max_range(t)])

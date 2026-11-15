@@ -26,7 +26,7 @@ func start(set_idx: int, tier: int, seed: int, team: Array) -> void:
 	var vs := get_viewport_rect().size; var portrait := vs.y > vs.x
 	var bgc := ColorRect.new(); bgc.color = Color("#0a1430"); bgc.set_anchors_preset(Control.PRESET_FULL_RECT); bgc.mouse_filter = Control.MOUSE_FILTER_IGNORE; add_child(bgc)
 	BT.start_battle(set_idx, tier, seed, team, portrait, play_aspect())
-	BT.wave_started.connect(wave_banner); BT.ask_join.connect(func(): ask_join.call_deferred()); BT.finished.connect(func(): show_result.call_deferred())
+	BT.wave_started.connect(wave_banner); BT.wave_started.connect(func(): _wave_music.call_deferred()); BT.ask_join.connect(func(): ask_join.call_deferred()); BT.finished.connect(func(): show_result.call_deferred())
 	vp = SubViewport.new(); vp.transparent_bg = false; vp.canvas_item_default_texture_filter = Viewport.DEFAULT_CANVAS_ITEM_TEXTURE_FILTER_NEAREST; vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS; add_child(vp)
 	view = load("res://scripts/view.gd").new(); vp.add_child(view)
 	map_rect = TextureRect.new(); map_rect.texture = vp.get_texture(); map_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE; map_rect.stretch_mode = TextureRect.STRETCH_SCALE
@@ -374,6 +374,20 @@ func ask_join() -> void:   # a knocked-out wild Pokémon asks to join: the battl
 		if B.team.size() < 10: B.team.append(e); build_team()
 		K.toast("%s joined your team!" % s.n, a.id); C.save(); K.close_panel()))
 	h.add_child(K.btn("Decline", func(): B.declined[a.id] = 1; K.close_panel(), true))
+# heavy waves play Monster House, the last wave the boss song. Re-applied after the battle code finishes the frame:
+# with Auto on, the old battle code (it can't be patched) started the next wave and then set the route song over it.
+func _wave_music() -> void:
+	if B == null or B.phase != "wave": return
+	var last: bool = B.wave == B.waves.size()
+	if B.wave % 5 == 0 and not last and C.DB.snd.music.has("_heavy"): Snd.play_music("_heavy")
+	elif last:
+		var leg := false; var bid = null
+		for x in B.waves[B.wave - 1]:
+			if x.get("boss", 0): bid = x.id; if C.SP[x.id].get("lg", 0): leg = true
+		var k: String = ("_e" if C.DB.ts[B.set].game == "E" else "_") + ("legend" if leg else "boss")
+		var own = C.DB.snd.get("bossTheme", {}).get(bid, null)
+		if own != null and B.en.any(func(e): return e.boss and e.hp > 0): k = own   # the boss is out and has its own song
+		Snd.play_music(k)
 func wave_banner() -> void:   # banner across the map when a wave starts (heavy waves and the boss get their own)
 	if B == null: return
 	var w: Array = B.waves[B.wave - 1]; var boss = null
