@@ -184,7 +184,8 @@ func layout() -> void:
 var _team_top := 0.0
 var _settle_n := 0
 func _open_tinfo() -> void:
-	tinfo.modulate.a = 0.0; tinfo.visible = true   # hidden until it has its final size (no big-then-small flash)
+	if not tinfo.visible: tinfo.modulate.a = 0.0   # only on first opening: hidden until it has its final size (refreshes while open stay visible)
+	tinfo.visible = true
 	layout()
 func _settle_tinfo() -> void:
 	_settle_n += 1; var my := _settle_n
