@@ -812,3 +812,59 @@ func begin_battle() -> void:
 	for u in team:
 		for e in G.box: if e.u == u: tm.append(e)
 	hud.start(route.set, route.tier, route.seed, tm)
+
+# ---- swipe-to-scroll for every list (lives here, not in kit.gd: autoload scripts start before a code patch loads, so they can't be patched)
+# (buttons and cards inside a list used to swallow the swipe) ----
+# A press inside a ScrollContainer that then moves more than 10 px becomes a scroll: the button under the
+# finger gets a "let go outside" so it doesn't fire, and the list follows the finger with a short glide after.
+var _sw = null; var _sw_fake := false; var _gl_sc: ScrollContainer = null; var _gl_v := Vector2.ZERO
+func _scroll_under(c: Node) -> ScrollContainer:
+	while c != null:
+		if c is ScrollContainer and not c.has_meta("own_drag"): return c
+		c = c.get_parent()
+	return null
+# the list under a finger, found from where it touched (on a phone there's no mouse "hover" before a touch)
+func _scroll_at(p: Vector2) -> ScrollContainer:
+	var root: Node = K.modal if is_instance_valid(K.modal) else get_tree().root   # with a popup open, only its lists
+	var best: ScrollContainer = null; var st: Array = [root]
+	while st.size():
+		var n: Node = st.pop_back()
+		if n is CanvasItem and not n.visible: continue
+		if n is ScrollContainer and not n.has_meta("own_drag") and n.get_global_rect().has_point(p): best = n   # later in the tree = drawn on top / nested deeper
+		var ch := n.get_children(); ch.reverse(); st.append_array(ch)
+	return best
+func _input(ev: InputEvent) -> void:
+	if _sw_fake: return
+	if ev is InputEventMouseButton and ev.button_index == MOUSE_BUTTON_LEFT:
+		if ev.pressed:
+			_gl_sc = null
+			var sc := _scroll_at(ev.position)
+			_sw = null if sc == null else {"sc": sc, "p": ev.position, "h": sc.scroll_horizontal, "v": sc.scroll_vertical, "on": false, "lp": ev.position, "t": Time.get_ticks_msec(), "vel": Vector2.ZERO}
+		elif _sw != null:
+			if _sw.on:
+				get_viewport().set_input_as_handled()
+				if is_instance_valid(_sw.sc): _gl_sc = _sw.sc; _gl_v = _sw.vel
+			_sw = null
+	elif ev is InputEventMouseMotion and _sw != null:
+		if not is_instance_valid(_sw.sc): _sw = null; return
+		var sc: ScrollContainer = _sw.sc
+		var d: Vector2 = ev.position - _sw.p
+		var hz := sc.horizontal_scroll_mode != ScrollContainer.SCROLL_MODE_DISABLED; var vt := sc.vertical_scroll_mode != ScrollContainer.SCROLL_MODE_DISABLED
+		if not _sw.on:
+			if (absf(d.y) < 10 or not vt) and (absf(d.x) < 10 or not hz): return
+			_sw.on = true
+			var up := InputEventMouseButton.new(); up.button_index = MOUSE_BUTTON_LEFT; up.pressed = false; up.position = Vector2(-9999, -9999); up.global_position = up.position
+			_sw_fake = true; get_viewport().push_input(up); _sw_fake = false   # the button under the finger lets go without firing
+		get_viewport().set_input_as_handled()
+		if vt: sc.scroll_vertical = int(_sw.v - d.y)
+		if hz: sc.scroll_horizontal = int(_sw.h - d.x)
+		var now := Time.get_ticks_msec(); var dt: float = max(1, now - _sw.t) / 1000.0
+		var step: Vector2 = ev.position - _sw.lp
+		_sw.vel = _sw.vel.lerp(-step / dt, 0.5); _sw.lp = ev.position; _sw.t = now
+func _glide(dt: float) -> void:
+	if _gl_sc == null: return
+	if not is_instance_valid(_gl_sc) or _gl_v.length() < 20: _gl_sc = null; return
+	if _gl_sc.vertical_scroll_mode != ScrollContainer.SCROLL_MODE_DISABLED: _gl_sc.scroll_vertical = int(_gl_sc.scroll_vertical + _gl_v.y * dt)
+	if _gl_sc.horizontal_scroll_mode != ScrollContainer.SCROLL_MODE_DISABLED: _gl_sc.scroll_horizontal = int(_gl_sc.scroll_horizontal + _gl_v.x * dt)
+	_gl_v *= pow(0.03, dt)
+func _process(dt: float) -> void: _glide(dt)
