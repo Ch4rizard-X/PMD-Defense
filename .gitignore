@@ -20,3 +20,9 @@ android/keys/
 *.pem
 *.der
 *.apk
+*.keystore
+*.jks
+*.p12
+keystore-pass.txt
+signing-key-backup/
+upd_token*

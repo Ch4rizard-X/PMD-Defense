@@ -16,11 +16,7 @@ namespace RouteDefense.EditorTools
         [MenuItem("Route Defense/Build Android APK")]
         public static void Android()
         {
-            PlayerSettings.SetApplicationIdentifier(NamedBuildTarget.Android, "com.routedefense.game");
-            PlayerSettings.SetScriptingBackend(NamedBuildTarget.Android, ScriptingImplementation.IL2CPP);
-            PlayerSettings.Android.targetArchitectures = AndroidArchitecture.ARM64;
-            EditorUserBuildSettings.buildAppBundle = false;
-            PlayerSettings.Android.bundleVersionCode++;   // a higher version each build, so Android installs it over the old one and keeps your save
+            AndroidSetup();
             Directory.CreateDirectory("Builds");
             Report(BuildPipeline.BuildPlayer(new BuildPlayerOptions { scenes = Scenes(), locationPathName = "Builds/RouteDefense.apk", target = BuildTarget.Android, options = BuildOptions.None }));
         }
@@ -28,12 +24,39 @@ namespace RouteDefense.EditorTools
         [MenuItem("Route Defense/Build and Run on phone (USB)")]
         public static void AndroidRun()
         {
+            AndroidSetup();
+            Directory.CreateDirectory("Builds");
+            Report(BuildPipeline.BuildPlayer(new BuildPlayerOptions { scenes = Scenes(), locationPathName = "Builds/RouteDefense.apk", target = BuildTarget.Android, options = BuildOptions.AutoRunPlayer }));   // installs and starts it on the plugged-in phone
+        }
+
+        // the fixed signing key (kept next to the project, never in the public repo): every build gets the same signature,
+        // so a new APK installs over the old one and keeps the save. Without the key Unity signs with this PC's debug key.
+        const string KEY = "signing-key-backup/routedefense.keystore", PASS = "signing-key-backup/keystore-pass.txt";
+        static void AndroidSetup()
+        {
             PlayerSettings.SetApplicationIdentifier(NamedBuildTarget.Android, "com.routedefense.game");
             PlayerSettings.SetScriptingBackend(NamedBuildTarget.Android, ScriptingImplementation.IL2CPP);
             PlayerSettings.Android.targetArchitectures = AndroidArchitecture.ARM64;
-            EditorUserBuildSettings.buildAppBundle = false; PlayerSettings.Android.bundleVersionCode++;
-            Directory.CreateDirectory("Builds");
-            Report(BuildPipeline.BuildPlayer(new BuildPlayerOptions { scenes = Scenes(), locationPathName = "Builds/RouteDefense.apk", target = BuildTarget.Android, options = BuildOptions.AutoRunPlayer }));   // installs and starts it on the plugged-in phone
+            EditorUserBuildSettings.buildAppBundle = false;
+            PlayerSettings.Android.bundleVersionCode++;   // a higher version each build, so Android installs it over the old one and keeps your save
+            PlayerSettings.bundleVersion = "1." + PlayerSettings.Android.bundleVersionCode;   // the version name players see
+            if (File.Exists(KEY) && File.Exists(PASS))
+            {
+                string pw = File.ReadAllText(PASS).Trim();
+                PlayerSettings.Android.useCustomKeystore = true;
+                PlayerSettings.Android.keystoreName = Path.GetFullPath(KEY); PlayerSettings.Android.keystorePass = pw;
+                PlayerSettings.Android.keyaliasName = "routedefense"; PlayerSettings.Android.keyaliasPass = pw;
+            }
+            else { PlayerSettings.Android.useCustomKeystore = false; Debug.LogWarning("Route Defense: signing key not found in " + KEY + " - using Unity's debug key (updates won't install over other PCs' builds)"); }
+        }
+
+        // after an Android build: Builds/apk.json with what the in-game updater checks (version, size, SHA-256); the download link is added when publishing
+        static void WriteApkInfo(string apk)
+        {
+            if (!File.Exists(apk)) return;
+            string sha; using (var f = File.OpenRead(apk)) using (var h = System.Security.Cryptography.SHA256.Create()) sha = System.BitConverter.ToString(h.ComputeHash(f)).Replace("-", "").ToLowerInvariant();
+            var i = new ApkInfo { versionCode = PlayerSettings.Android.bundleVersionCode, version = PlayerSettings.bundleVersion, bytes = new FileInfo(apk).Length, sha256 = sha };
+            File.WriteAllText("Builds/apk.json", JsonUtility.ToJson(i, true));
         }
 
         [MenuItem("Route Defense/Build Windows")]
@@ -46,6 +69,7 @@ namespace RouteDefense.EditorTools
         static void Report(BuildReport r)
         {
             var s = r.summary;
+            if (s.result == BuildResult.Succeeded && s.platform == BuildTarget.Android) WriteApkInfo(s.outputPath);
             if (s.result == BuildResult.Succeeded) { Debug.Log($"Route Defense: build done — {s.outputPath} ({s.totalSize / 1048576} MB)"); EditorUtility.RevealInFinder(s.outputPath); }
             else Debug.LogError($"Route Defense: build {s.result} with {s.totalErrors} errors — see the Console above");
         }
