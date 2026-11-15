@@ -70,7 +70,7 @@ func build_hud() -> void:
 	boss_trail = ColorRect.new(); boss_trail.color = Color(1, 1, 1, 0.5); bb.add_child(boss_trail)
 	boss_fill = ColorRect.new(); boss_fill.color = Color("#ff4040"); bb.add_child(boss_fill)
 	# team row (floats over the bottom of the map; scrolls sideways when it's long)
-	teamsv = ScrollContainer.new(); teamsv.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED; teamsv.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_NEVER
+	teamsv = ScrollContainer.new(); teamsv.set_meta("own_drag", true); teamsv.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED; teamsv.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_NEVER
 	var tst := K.sb(Color(11 / 255.0, 31 / 255.0, 92 / 255.0, 0.8), Color(223 / 255.0, 234 / 255.0, 1, 0.53), 2, 12, 4)
 	var tpc := PanelContainer.new(); tpc.add_theme_stylebox_override("panel", tst); tpc.name = "TeamPanel"; add_child(tpc)
 	tpc.add_child(teamsv); teamrow = K.hbox(4); teamsv.add_child(teamrow)
