@@ -67,6 +67,30 @@ namespace RouteDefense
             e.style.borderTopLeftRadius = e.style.borderTopRightRadius = e.style.borderBottomLeftRadius = e.style.borderBottomRightRadius = r;
         }
         static void Pad(VisualElement e, float p) { e.style.paddingTop = e.style.paddingBottom = e.style.paddingLeft = e.style.paddingRight = p; }
+        // the symbols the HTML version shows (👁 ⚙ ☰ from Android's Noto fonts), as images: the game's pixel font doesn't have them
+        static VisualElement Glyph(string name, float h)
+        {
+            var g = new VisualElement(); var tex = Resources.Load<Texture2D>("Ui/" + name); g.pickingMode = PickingMode.Ignore;
+            g.style.height = h; g.style.width = tex != null ? h * tex.width / tex.height : h; g.style.flexShrink = 0;
+            if (tex != null) { g.style.backgroundImage = tex; tex.filterMode = FilterMode.Bilinear; }
+            return g;
+        }
+        // a button with a symbol in front of its text, like the HTML's "⚙ Options" or "☰"
+        static Button GlyphBtn(string glyph, string t, Action a, bool alt = false, bool small = false)
+        {
+            var b = Btn("", a, alt, small); b.style.flexDirection = FlexDirection.Row; b.style.alignItems = Align.Center; b.style.justifyContent = Justify.Center;
+            float fs = small ? 14 : 16; b.Add(Glyph(glyph, fs + 2));
+            if (t != "") { var l = L(t, (int)fs); l.pickingMode = PickingMode.Ignore; l.style.marginLeft = 5; l.style.marginTop = l.style.marginBottom = l.style.marginRight = 0; l.style.paddingLeft = l.style.paddingRight = l.style.paddingTop = l.style.paddingBottom = 0; b.Add(l); }
+            return b;
+        }
+        // the HTML's eye badge in a card's top-left corner: this Pokémon sees hidden Pokémon
+        static VisualElement EyeBadge(bool small)
+        {
+            var e = new VisualElement(); e.pickingMode = PickingMode.Ignore; e.style.position = Position.Absolute;
+            e.style.top = small ? 1 : 3; e.style.left = small ? 1 : 4; e.style.paddingTop = e.style.paddingBottom = 1; e.style.paddingLeft = e.style.paddingRight = 3;
+            e.style.backgroundColor = new Color(0x4a / 255f, 0x1a / 255f, 0x6a / 255f, 0.8f); Edge(e, Hex("#d8b0ff"), 1, 7);
+            e.Add(Glyph("eye", small ? 9 : 11)); return e;
+        }
         static Button Btn(string t, Action a, bool alt = false, bool small = false)
         {
             var b = new Button(() => { Gfx.Sfx("tap"); a(); }) { text = t };
@@ -250,7 +274,7 @@ namespace RouteDefense
             top.Add(UiImg("coin", 20)); top.Add(L(" " + G.money.ToString("N0"), 16, ACC)); top.Add(Gap()); top.Add(UiImg("badge", 20)); top.Add(L(" Rescue Points " + G.rp)); top.Add(Gap());
             top.Add(L("Maps " + Prog.OpenCount() + "/" + DB.TS.Count)); top.Add(Gap()); top.Add(L("Best tier " + Prog.BestTier())); top.Add(Gap());
             top.Add(L("Pokédex " + G.own.Count + "/" + DB.Mons.Count(m => m.anim))); top.Add(Gap());
-            top.Add(Btn("Options", () => OptionsPanel(() => ShowHub()), true, true));
+            top.Add(GlyphBtn("gear", "Options", () => OptionsPanel(() => ShowHub()), true, true));
             var tabs = Add(s, Row(true));
             foreach (var (k, n) in new[] { ("routes", "Routes"), ("box", "Box"), ("dex", "Pokédex"), ("rescue", "Rescue"), ("shop", "Shop"), ("bag", "Bag") })
             {
@@ -355,11 +379,10 @@ namespace RouteDefense
             string extra = (DB.EvoOptions(e).Any(o => o.ok) ? "  EVOLVE" : "") + (e.pend.Count > 0 ? "  NEW MOVE" : "");
             c.Add(L("Lv " + e.lv + extra, 13, extra.Length > 0 ? ACC : DIM));
             var qk = L(string.Join(" / ", Battle.Quirks(e.id).Select(q => q[0])), 10, Hex("#ffe39a")); qk.style.unityTextAlign = TextAnchor.MiddleCenter; c.Add(qk);   // type quirks
-            if (Battle.SeesWhy(e) != null) c.Add(SeesTag());
+            if (Battle.SeesWhy(e) != null) c.Add(EyeBadge(false));
             if (onClick != null) Click(c, onClick); return c;
         }
         /* small badge for Pokémon that can see hidden Ghost types */
-        static Label SeesTag() { var l = new Label("sees hidden"); l.style.fontSize = 10; l.style.color = Hex("#1a2a55"); l.style.backgroundColor = ACC; Pad(l, 1); l.style.paddingLeft = l.style.paddingRight = 4; l.style.borderTopLeftRadius = l.style.borderTopRightRadius = l.style.borderBottomLeftRadius = l.style.borderBottomRightRadius = 4; return l; }
         static void HubBox(VisualElement body)
         {
             body.Add(L(Save.G.box.Count + " Pokémon. Tap one to see its moves and evolutions.", 13, DIM));
@@ -385,7 +408,7 @@ namespace RouteDefense
             var iv = DB.IvsOf(e); var nb = Box(); nb.Add(L("Nature: " + DB.NatLabel(e.nat)));
             if (e.mint != 0) { var mt = DB.Tools.Values.FirstOrDefault(x => x.nat == e.mint); nb.Add(L("Stats changed by " + (mt != null ? mt.n : "a Mint") + ": " + DB.NatLabel(e.mint), 12, Hex("#99ff99"))); }
             nb.Add(L("IVs " + string.Join(" / ", iv) + "  (total " + iv.Sum() + "/186)", 12, DIM));
-            var sw = Battle.SeesWhy(e); nb.Add(L(sw != null ? "Sees hidden Pokémon: reveals hidden Ghost types in its range (" + sw + ")" : "Can't see hidden Pokémon: hidden Ghost types need a Psychic or Ghost type, Foresight, Odor Sleuth, Miracle Eye, Keen Eye or Frisk nearby", 12, sw != null ? Hex("#99ff99") : Hex("#aaaaaa")));
+            var sw = Battle.SeesWhy(e); if (sw != null) { var er = Add(nb, Row()); er.style.alignItems = Align.Center; er.Add(Glyph("eye", 14)); } nb.Add(L(sw != null ? "Sees hidden Pokémon: reveals hidden Ghost types in its range (" + sw + ")" : "Can't see hidden Pokémon: hidden Ghost types need a Psychic or Ghost type, Foresight, Odor Sleuth, Miracle Eye, Keen Eye or Frisk nearby", 12, sw != null ? Hex("#99ff99") : Hex("#aaaaaa")));
             if (!InBattle && Save.G.tools.Count > 0) nb.Add(Btn("Use a Mint or Bottle Cap", () => ToolPanel(e, () => MonPanel(e, after)), false, true));
             p.Add(nb);
             if (DB.Abil.TryGetValue(e.ab, out var A))
@@ -672,7 +695,7 @@ namespace RouteDefense
             bau = Add(hud, Btn("Auto: " + (Battle.B.auto ? "on" : "off"), () => { var B = Battle.B; B.auto = !B.auto; bau.text = "Auto: " + (B.auto ? "on" : "off"); if (B.auto) B.StartWave(); }, true, true));
             bwx = Add(hud, Btn("Weather", WeatherPanel, true, true));
             bmt = Add(hud, Btn("Meter", () => { Save.G.meter = !Save.G.meter; Save.Write(); MeterShow(); }, !Save.G.meter, true));
-            hud.Add(Btn("Menu", PauseMenu, true, true));
+            hud.Add(GlyphBtn("menu", "", PauseMenu, true, true));
             // wave progress: how much of this wave is done (a thin line under the one-row bar)
             var wp = Add(hud, new VisualElement()); wp.style.height = 3; wp.style.position = Position.Absolute; wp.style.left = 8; wp.style.right = 8; wp.style.bottom = 1; wp.style.backgroundColor = new Color(0, 0, 0, .35f); hud.style.paddingBottom = 7;
             wprog = Add(wp, new VisualElement()); wprog.style.height = 3; wprog.style.backgroundColor = ACC;
@@ -720,7 +743,7 @@ namespace RouteDefense
             foreach (var e in Battle.B.team)
             {
                 var c = new VisualElement(); c.userData = e; c.style.width = 56; c.style.alignItems = Align.Center; c.style.backgroundColor = WIN; Edge(c, EDGE, 2, 6); c.style.borderTopWidth = 4; Pad(c, 2); c.style.marginLeft = c.style.marginRight = 2; c.style.marginTop = c.style.marginBottom = 2;
-                c.Add(Icon(e.id, 30)); if (Battle.SeesWhy(e) != null) { var st = SeesTag(); st.text = "sees"; c.Add(st); } var tl = L("", 11); tl.name = "tl"; tl.style.unityTextAlign = TextAnchor.MiddleCenter; c.Add(tl);
+                c.Add(Icon(e.id, 30)); if (Battle.SeesWhy(e) != null) c.Add(EyeBadge(true)); var tl = L("", 11); tl.name = "tl"; tl.style.unityTextAlign = TextAnchor.MiddleCenter; c.Add(tl);
                 Click(c, () =>
                 {
                     var B = Battle.B; var tw = B.towers.Find(t => t.e == e);
@@ -888,7 +911,7 @@ namespace RouteDefense
         {
             var B = Battle.B; if (B == null || B.over || B.paused) return;
             B.paused = true; var p = Panel(() => { if (Battle.B != null) Battle.B.paused = false; }); p.Add(L("Paused", 20));
-            var r = Add(p, Row()); r.Add(Btn("Resume", ClosePanel)); r.Add(Btn("Options", () => OptionsPanel(() => { if (Battle.B != null) Battle.B.paused = false; }), true)); r.Add(Btn("Give up", () => { ClosePanel(); Battle.B.GiveUp(); }, true));
+            var r = Add(p, Row()); r.Add(Btn("Resume", ClosePanel)); r.Add(GlyphBtn("gear", "Options", () => OptionsPanel(() => { if (Battle.B != null) Battle.B.paused = false; }), true)); r.Add(Btn("Give up", () => { ClosePanel(); Battle.B.GiveUp(); }, true));
         }
         public static void OnPause() { if (InBattle) PauseMenu(); }
         /* a knocked-out wild Pokémon asks to join: the battle pauses and you decide */
