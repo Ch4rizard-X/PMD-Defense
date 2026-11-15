@@ -435,8 +435,9 @@ function tick(dt) {
       B.cash += Math.round((30 + B.wave * 6) * (1 + mod('waveBonus')));
       if (B.pwx && B.wave >= B.pwx.until) B.pwx = null;   // your weather ends with its last wave
       if (B.wave >= B.waves.length) return finish(true);
-      B.phase = 'build'; if (B.auto) startWave();
-      playMusic(DB.ts[B.set].name);
+      B.phase = 'build';
+      playMusic(DB.ts[B.set].name);   // before the next wave starts, or it would replace the heavy / boss song
+      if (B.auto) startWave();
     }
   }
   syncWeather();
