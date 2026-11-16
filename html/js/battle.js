@@ -122,7 +122,10 @@ function startWave() {
   B.q = B.waves[B.wave].map(x => Object.assign({}, x)); B.qt = 0.4; B.wave++; B.phase = 'wave';
   if (typeof waveBanner === 'function') waveBanner();
   if (B.wave % 10 === 0 && B.wave !== B.waves.length) playMusic((DB.ts[B.set].game === 'E' ? '_e' : '_') + 'boss');   // midboss waves: the boss song all wave
-  else if (B.wave % 5 === 0 && B.wave !== B.waves.length && DB.snd.music._heavy) playMusic('_heavy');   // heavy waves: Monster House
+  else if (B.wave % 5 === 0 && B.wave !== B.waves.length && DB.snd.music._heavy) {   // heavy waves: Monster House, Explorers of Sky's or Red's at random
+    const mh = ['_heavy']; if (DB.snd.music._heavy2) mh.push('_heavy2');   // the second song ships with the app's data (older apps: Explorers of Sky's only)
+    playMusic(mh[Math.floor(Math.random() * mh.length)]);
+  }
   if (B.wave === B.waves.length) playMusic((DB.ts[B.set].game === 'E' ? '_e' : '_') + (B.waves[B.wave - 1].some(x => x.boss && SP[x.id].lg) ? 'legend' : 'boss'));
 }
 function spawn(s, d) {
