@@ -67,7 +67,9 @@ func build_hud() -> void:
 	# boss bar
 	bossbar = K.vbox(2); bossbar.visible = false; bossbar.mouse_filter = Control.MOUSE_FILTER_IGNORE; add_child(bossbar)
 	boss_name = K.rich("", 16); boss_name.custom_minimum_size = Vector2(260, 0); bossbar.add_child(boss_name)
+	boss_name.add_theme_constant_override("outline_size", 6); boss_name.add_theme_color_override("font_outline_color", Color(0.02, 0.04, 0.12))   # dark outline: readable on any tileset
 	var bb := Control.new(); bb.custom_minimum_size = Vector2(260, 12); bossbar.add_child(bb)
+	var frame := ColorRect.new(); frame.color = Color(0.02, 0.04, 0.12); frame.set_anchors_preset(Control.PRESET_FULL_RECT); frame.offset_left = -2; frame.offset_top = -2; frame.offset_right = 2; frame.offset_bottom = 2; bb.add_child(frame)   # dark frame around the bar
 	boss_bg = ColorRect.new(); boss_bg.color = Color(0, 0, 0, 0.7); boss_bg.set_anchors_preset(Control.PRESET_FULL_RECT); bb.add_child(boss_bg)
 	boss_trail = ColorRect.new(); boss_trail.color = Color(1, 1, 1, 0.5); bb.add_child(boss_trail)
 	boss_fill = ColorRect.new(); boss_fill.color = Color("#ff4040"); bb.add_child(boss_fill)
@@ -172,7 +174,7 @@ func refresh_hud() -> void:
 	bossbar.visible = boss != null
 	if boss:
 		var lg: bool = C.SP[boss.id].get("lg", 0)
-		boss_name.text = "[center]%s%s [font_size=12]Lv %d[/font_size][/center]" % ["[color=#ffd84a]LEGENDARY[/color] " if lg else "", C.SP[boss.id].n, boss.lv]
+		boss_name.text = "[center]%s%s [font_size=12]Lv %d[/font_size][/center]" % ["[color=#ffd84a]LEGENDARY[/color] " if lg else ("[color=#ff9a3c]MIDBOSS[/color] " if boss.get("mid", false) else ""), C.SP[boss.id].n, boss.lv]
 		var fr: float = boss.hp / float(boss.max)
 		_bt = max(fr, _bt - 0.01) if (_boss_ref != null and is_same(_boss_ref, boss)) else fr; _boss_ref = boss
 		boss_fill.size = Vector2(260 * fr, 12); boss_trail.size = Vector2(260 * _bt, 12)
@@ -553,13 +555,13 @@ func meter_draw(box: VBoxContainer, tab: String, full: bool) -> void:
 		elif tab == "dmg": txt = "%s  %d/s  %d%%" % [ui._num(m.dmg), round(m.dmg / secs), pct]
 		elif tab == "ko": txt = "%d  %d%%" % [m.ko, pct]
 		else: txt = "%d s control%s" % [round(m.ctl), (" - %s over time" % ui._num(m.dot)) if m.dot else ""]
-		var ic: int = (32 if full else 24) if _bar_over() else (22 if full else 14)   # PC: bigger Pokémon icons, they were barely visible
+		var ic: int = (36 if full else 28) if _bar_over() else (28 if full else 20)   # the Pokémon's own sprite (box icons were barely visible); bigger on PC
 		var row := Control.new(); row.custom_minimum_size = Vector2(0, max(ic, 26 if full else 18)); row.mouse_filter = Control.MOUSE_FILTER_STOP; box.add_child(row)
 		var barc := ColorRect.new(); barc.color = Color(C.TCOL[C.SP[r.e.id].t[0]], 0.55); barc.mouse_filter = Control.MOUSE_FILTER_IGNORE; row.add_child(barc)
 		var fr: float = max(0.02, val.call(r) / mx)
 		row.resized.connect(func(): barc.size = Vector2(row.size.x * fr, row.size.y))
 		var h := K.hbox(4); h.set_anchors_preset(Control.PRESET_FULL_RECT); h.mouse_filter = Control.MOUSE_FILTER_IGNORE; row.add_child(h)
-		h.add_child(K.icon(r.e.id, ic))
+		var mi = K.anim_icon(r.e.id, ic); mi.sc = 1.5; mi.mouse_filter = Control.MOUSE_FILTER_IGNORE; h.add_child(mi)   # sprite frames have empty space around the Pokémon: zoom in
 		var nm := K.lbl(("%d. " % (i + 1) if full else "") + C.SP[r.e.id].n + ("  MVP" if (full and i == 0 and tab == "dmg") else ""), 14 if full else 11, Color.WHITE, false); nm.size_flags_horizontal = Control.SIZE_EXPAND_FILL; nm.clip_text = true; h.add_child(nm)
 		h.add_child(K.lbl(txt, 14 if full else 11, Color.WHITE, false))
 		row.gui_input.connect(func(ev):
