@@ -70,8 +70,10 @@ func cell_route(cw: int, ch: int, R: Rng, start: Array, goal: Callable, used: Di
 
 # aspect = long side / short side of the play area: the map is made in that shape so it fills it.
 # the path is laid out in 5-tile blocks; map_extra adds plain columns (same tileset) at the exit end so the shape matches to one tile
-func map_cols(aspect: float) -> int: return clampi(int(floor((aspect * 21 - 2) / 5.0)), 5, 10)
-func map_extra(aspect: float, cw: int) -> int: return clampi(int(round(aspect * 21)) - (cw * 5 + 2), 0, 6)
+func map_cols(aspect: float) -> int: return clampi(int(floor((aspect * 21 - 2) / 5.0)), 5, 10)   # the path can't wind properly much past 10 blocks; wider screens get plain columns
+func map_extra(aspect: float, cw: int) -> int: return clampi(int(round(aspect * 21)) - (cw * 5 + 2), 0, 60)   # very wide (PC) screens: many plain columns
+# plain columns put before the entrance: only past the 6 the exit end always took (phones never get there), half of the rest
+func map_lead(extra: int) -> int: return max(0, extra - 6) / 2
 static func _idx(cp: Array, c) -> int:
 	for j in cp.size(): if cp[j][0] == c[0] and cp[j][1] == c[1]: return j
 	return -1
@@ -81,7 +83,7 @@ func gen_map(set_idx: int, portrait: bool, seed: int, kind = null, aspect := 1.7
 	var hard := clampf((tier - 4) / 16.0, 0, 1) * 0.6 + md * 0.4                             # tier gives up to 60%, the map's group the other 40%
 	var eff_tier := tier * 0.75 + grp * 4; var len_k := 1 - 0.3 * md                         # third entrances: late tiers on later maps; paths up to 30% shorter
 	var R := Rng.new(seed); var S: Dictionary = C.DB.ts[set_idx]
-	var CS := 5; var ch := 4; var cw := map_cols(aspect); var W := cw * CS + 2 + map_extra(aspect, cw); var H := 21; var ox := 1; var oy := 0   # the path's last straight runs on to the far edge
+	var CS := 5; var ch := 4; var cw := map_cols(aspect); var ex := map_extra(aspect, cw); var W := cw * CS + 2 + ex; var H := 21; var ox := 1 + map_lead(ex); var oy := 0   # the path's last straight runs on to the far edge
 	var t := []
 	for y in H:
 		var row := PackedInt32Array(); row.resize(W); t.append(row)
@@ -150,6 +152,7 @@ func gen_map(set_idx: int, portrait: bool, seed: int, kind = null, aspect := 1.7
 				if a >= 0 and b >= 0 and a < W and b < H and t[b][a] == 1: return true
 		return false
 	var np := 1 + int(floor(R.next() * 3)) + int(round(hard * 5))   # more ponds / lava pools on harder fights: fewer good spots
+	np += max(0, W - 62) / 12   # very wide (PC) maps: a few more, so the extra grass isn't bare (phone maps are never this wide)
 	for k in np:
 		for tr in 60:
 			var sx := 1 + int(floor(R.next() * (W - 3))); var sy := 1 + int(floor(R.next() * (H - 3)))

@@ -28,6 +28,7 @@ func _notification(what: int) -> void:
 # the menu size option (Small / Medium / Large / Extra large)
 const UISIZE := {"s": ["Small", 0.85], "m": ["Medium", 1.0], "l": ["Large", 1.2], "xl": ["Extra large", 1.4]}
 func apply_ui_size() -> void:
+	_prune_panel_fits()
 	get_window().content_scale_factor = UISIZE.get(G.opts.get("ui", "m"), UISIZE.m)[1]
 
 func show_screen(name: String) -> Control:
@@ -867,7 +868,18 @@ func _glide(dt: float) -> void:
 	if _gl_sc.vertical_scroll_mode != ScrollContainer.SCROLL_MODE_DISABLED: _gl_sc.scroll_vertical = int(_gl_sc.scroll_vertical + _gl_v.y * dt)
 	if _gl_sc.horizontal_scroll_mode != ScrollContainer.SCROLL_MODE_DISABLED: _gl_sc.scroll_horizontal = int(_gl_sc.scroll_horizontal + _gl_v.x * dt)
 	_gl_v *= pow(0.03, dt)
-func _process(dt: float) -> void: _glide(dt)
+func _process(dt: float) -> void: _glide(dt); _prune_panel_fits()
+# every popup (K.panel) hooks a size handler onto the menu layer and never removes it; once the popup is gone that handler
+# points at freed nodes, and a resize (changing the UI size, resizing the window on PC) ran all of them: errors, or a crash.
+# kit.gd can't be patched, so the dead ones are dropped here: only the open popup's own handler is kept.
+func _prune_panel_fits() -> void:
+	if K.root == null or not is_instance_valid(K.root): return
+	var cons: Array = K.root.get_signal_connection_list("resized")
+	if cons.size() <= 1: return
+	var keep = K.modal.get_meta("fit") if is_instance_valid(K.modal) and K.modal.has_meta("fit") else null
+	for c in cons:
+		var cb: Callable = c.callable
+		if cb.is_custom() and (keep == null or cb != keep): K.root.resized.disconnect(cb)
 # ---- heavy waves (every 5th): the bulkiest third of the map's Pokémon (at least 6), and each heavy wave draws from the
 # next 3 of them in strength order (weakest first), so every heavy wave brings new species, stronger as the map goes on; they also grow with the map.
 # Built after the battle code's own waves (with their own random numbers, so the other waves stay exactly the same).
