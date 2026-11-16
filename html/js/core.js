@@ -55,7 +55,9 @@ function sfx(key) {
   if (!ACTX || (G && G.opts && G.opts.mute)) return;
   const buf = SFXBUF[key]; if (!buf) return;
   const now = performance.now(); if (now - (SND.last[key] || 0) < 90) return; SND.last[key] = now;
+  if (key === 'lvl' && SND.lvlUntil > now) return;   // the level-up sound plays one at a time: fast upgrades / several level-ups don't stack
   const s = ACTX.createBufferSource(), g = ACTX.createGain(); g.gain.value = SND.sfxVol; s.buffer = buf; s.connect(g).connect(ACTX.destination); s.start();
+  if (key === 'lvl') SND.lvlUntil = now + buf.duration * 1000;
 }
 
 /* ---------- Pokémon maths (main-series formulas, IVs 15, no EVs) ---------- */
