@@ -47,13 +47,15 @@ function cellRoute(cw, ch, R, start, goal, used, minLen, maxLen) {
 /* aspect = long side / short side of the screen: the map is made in that shape so it fills it */
 /* the path is laid out in 5-tile blocks; mapExtra adds plain columns (same tileset) at the exit end so the shape matches the screen to one tile */
 function mapCols(aspect) { return clamp(Math.floor(((aspect || 1.76) * 21 - 2) / 5), 5, 10); }
-function mapExtra(aspect, cw) { return clamp(Math.round((aspect || 1.76) * 21) - (cw * 5 + 2), 0, 6); }
+function mapExtra(aspect, cw) { return clamp(Math.round((aspect || 1.76) * 21) - (cw * 5 + 2), 0, 60); }   // very wide (PC) screens: many plain columns
+// plain columns put before the entrance: only past the 6 the exit end always took (phones never get there), half of the rest
+function mapLead(extra) { return Math.floor(Math.max(0, extra - 6) / 2); }
 function genMap(setIdx, portrait, seed, kind, aspect, tier) {
   const grp = mapGroup(setIdx), md = grp / 3;                       // later maps are harder by nature
   const hard = clamp(((tier || 1) - 4) / 16, 0, 1) * 0.6 + md * 0.4;   // tier gives up to 60%, the map's group the other 40%: Expert at tier 20 = full
   const effTier = (tier || 1) * 0.75 + grp * 4, lenK = 1 - 0.3 * md;   // third entrances: late tiers on later maps; paths up to 30% shorter
   const R = rng(seed), S = DB.ts[setIdx];
-  const CS = 5, ch = 4, cw = mapCols(aspect), W = cw * CS + 2 + mapExtra(aspect, cw), H = 21, ox = 1, oy = 0;   // the path's last straight runs on to the far edge
+  const CS = 5, ch = 4, cw = mapCols(aspect), ex = mapExtra(aspect, cw), W = cw * CS + 2 + ex, H = 21, ox = 1 + mapLead(ex), oy = 0;   // the path's last straight runs on to the far edge
   const t = Array.from({ length: H }, () => new Array(W).fill(0));
   // layout kind: one path, a path that splits in two and rejoins, or a second entrance that merges in
   // layout kind: one path, a split that rejoins, a second entrance, or (tier 15+) a third entrance; plain paths fade out with tier
@@ -110,7 +112,8 @@ function genMap(setIdx, portrait, seed, kind, aspect, tier) {
   }
   // ponds (water, or lava in volcanic settings), kept off the path
   const nearPath = (x, y, d) => { for (let j = -d; j <= d; j++) for (let i = -d; i <= d; i++) { const a = x + i, b = y + j; if (a >= 0 && b >= 0 && a < W && b < H && t[b][a] === 1) return true; } return false; };
-  const np = 1 + Math.floor(R() * 3) + Math.round(hard * 5);   // more ponds / lava pools at higher tiers: fewer good spots
+  let np = 1 + Math.floor(R() * 3) + Math.round(hard * 5);   // more ponds / lava pools at higher tiers: fewer good spots
+  np += Math.floor(Math.max(0, W - 62) / 12);   // very wide (PC) maps: a few more, so the extra grass isn't bare (phone maps are never this wide)
   for (let k = 0; k < np; k++) {
     for (let tr = 0; tr < 60; tr++) {
       const sx = 1 + Math.floor(R() * (W - 3)), sy = 1 + Math.floor(R() * (H - 3));
