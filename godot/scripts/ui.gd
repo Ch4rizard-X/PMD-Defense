@@ -14,6 +14,7 @@ func _ready() -> void:
 	set_anchors_preset(Control.PRESET_FULL_RECT); theme = K.theme
 	K.root = self
 	if C.G == null: C.G = C.new_save()
+	tm_init()
 	K.toasts = VBoxContainer.new(); K.toasts.set_anchors_preset(Control.PRESET_CENTER_TOP); K.toasts.anchor_left = 0.5; K.toasts.anchor_right = 0.5
 	K.toasts.offset_top = 60; K.toasts.grow_horizontal = Control.GROW_DIRECTION_BOTH; K.toasts.mouse_filter = Control.MOUSE_FILTER_IGNORE; K.toasts.z_index = 50
 	apply_ui_size()
@@ -518,6 +519,8 @@ func mon_panel(e: Dictionary, after = null) -> void:
 		var ski: int = e.mv.find(BT.MID("Sketch"))
 		if ski >= 0 and screen != "battle": bts.add_child(K.btn("Sketch a move", func(): sketch_panel(e, ski, func(): mon_panel(e, after)), false, true))
 		if rem.size(): bts.add_child(K.btn("Move Reminder (%d)" % rem.size(), func(): remind_panel(e, func(): mon_panel(e, after)), true, true))
+		var tmt: Array = tm_teachable(e)
+		if tmt.size() and screen != "battle": bts.add_child(K.btn("Teach a TM (%d)" % tmt.size(), func(): tm_panel(e, func(): mon_panel(e, after)), true, true))
 		var ev: Array = C.evo_options(e)
 		if ev.size():
 			box.add_child(K.lbl("Evolution", 18, K.GOLD))
@@ -584,6 +587,78 @@ func give_panel(e: Dictionary, back: Callable) -> void:
 		var cb := K.card_box(p); cb.alignment = BoxContainer.ALIGNMENT_BEGIN
 		var h := K.hbox(4); h.add_child(K.item_icon(k)); h.add_child(K.lbl("%s x%d" % [H.n, G.held[k]], 16, Color.WHITE, false)); cb.add_child(h); cb.add_child(K.lbl(C.HELD_TD.get(H.k, ""), 12, K.DIM)); box.add_child(p)
 	box.add_child(K.btn("Back", func(): K.close_panel(), true))
+# ---------- TMs (the user's choices): each Pokémon's TM moves from its newest main game; a TM is used up when taught;
+# they drop from won battles; teaching with 4 moves known forgets one ----------
+const TMD := preload("res://scripts/tmdata.gd")
+var _tm_tex := {}
+func tm_init() -> void:   # the TM moves the game didn't have yet join the move list
+	for k in TMD.MOVES: if not C.DB.dex.moves.has(k): C.DB.dex.moves[k] = TMD.MOVES[k]
+	if C.G != null and not C.G.has("tms"): C.G.tms = {}
+func tm_moves(id: int) -> Array:
+	if TMD.LS.has(id): return TMD.LS[id]
+	return TMD.LS.get(int(C.SP.get(id, {}).get("base", id)), [])
+func tm_icon(m: int, sz := 20) -> TextureRect:
+	var t: int = C.mv(m).t
+	if not _tm_tex.has(t):
+		var im := Image.new(); im.load_png_from_buffer(Marshalls.base64_to_raw(TMD.ICON[t])); _tm_tex[t] = ImageTexture.create_from_image(im)
+	var r := TextureRect.new(); r.texture = _tm_tex[t]; r.custom_minimum_size = Vector2(sz, sz); r.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	r.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED; r.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST; r.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return r
+func tm_teachable(e: Dictionary) -> Array:   # TMs in the bag this Pokémon can learn and doesn't know
+	var out := []
+	var can: Array = tm_moves(e.id)
+	for m in G.get("tms", {}): if G.tms[m] > 0 and can.has(m) and not e.mv.has(m): out.append(m)
+	return out
+func tm_drop(th: float, team: Array) -> int:   # after a win: a TM, stronger moves at higher tiers, half the time one your team can learn
+	if randf() > min(0.6, 0.25 + th * 0.02): return 0
+	var all := []; var fit := []
+	var cap: float = 60 + th * 12
+	var seen := {}
+	for id in TMD.LS:
+		for m in TMD.LS[id]:
+			if seen.has(m): continue
+			seen[m] = 1
+			var M: Dictionary = C.mv(m)
+			if M.is_empty() or C.move_use(m) == null or M.get("p", 0) > cap: continue
+			all.append(m)
+	for e in team:
+		for m in tm_moves(e.id): if all.has(m) and not e.mv.has(m): fit.append(m)
+	var pool: Array = fit if (fit.size() and randf() < 0.5) else all
+	if pool.is_empty(): return 0
+	var m: int = pool[randi() % pool.size()]
+	if not G.has("tms"): G.tms = {}
+	G.tms[m] = G.tms.get(m, 0) + 1
+	return m
+func tm_panel(e: Dictionary, back: Callable) -> void:   # teach a TM from the bag (used up), forgetting a move if 4 are known
+	var box := K.panel(back); var st := {"pick": null}
+	var render := func(self_ref: Callable) -> void:
+		K.clear(box)
+		K.panel_title(box, "Teach a TM")
+		box.add_child(K.lbl(("Pick a TM to teach %s. It is used up." % C.SP[e.id].n) if st.pick == null else ("Pick a move to forget for %s." % C.mv(st.pick).n), 13, K.DIM))
+		var list: Array = tm_teachable(e) if st.pick == null else e.mv
+		if st.pick == null: list.sort_custom(func(a, b): return C.move_value(a, e.id) > C.move_value(b, e.id))
+		for m in list:
+			var p := K.card(0, func():
+				if st.pick == null:
+					st.pick = m
+					if e.mv.size() < 4: _tm_use(e, m, -1); K.close_panel(); return
+					self_ref.call(self_ref)
+				else: _tm_use(e, st.pick, e.mv.find(m)); K.close_panel())
+			var cb := K.card_box(p); cb.alignment = BoxContainer.ALIGNMENT_BEGIN
+			var h := K.hbox(4)
+			if st.pick == null: h.add_child(tm_icon(m))
+			h.add_child(K.type_tag(C.mv(m).t)); h.add_child(K.lbl(C.mv(m).n + ((" x %d" % G.tms[m]) if st.pick == null else ""), 16, Color.WHITE, false)); cb.add_child(h)
+			cb.add_child(K.lbl(C.move_desc(m), 12, K.DIM)); box.add_child(p)
+		box.add_child(K.btn("Back", func(): K.close_panel(), true))
+	render.call(render)
+func _tm_use(e: Dictionary, m: int, slot: int) -> void:
+	var old := ""
+	if slot < 0: e.mv.append(m)
+	else: old = C.mv(e.mv[slot]).n; e.mv[slot] = m
+	G.tms[m] -= 1
+	if G.tms[m] <= 0: G.tms.erase(m)
+	C.save(); Snd.sfx("lvl")
+	K.toast("%s learned %s!%s" % [C.SP[e.id].n, C.mv(m).n, (" (forgot %s)" % old) if old != "" else ""], e.id)
 func remind_panel(e: Dictionary, back: Callable) -> void:   # relearn any move learned up to this level (free), replacing one
 	var box := K.panel(back); var st := {"pick": null}
 	var render := func(self_ref: Callable) -> void:
@@ -793,12 +868,19 @@ func hub_bag(body: VBoxContainer) -> void:
 	for k in G.items: if G.items[k] > 0: ks.append(k)
 	for k in G.held: if G.held[k] > 0: hs.append(k)
 	for k in G.tools: if G.tools[k] > 0: tsk.append(k)
-	body.add_child(K.lbl("Use items from a Pokémon's page in the Box." if (ks.size() or hs.size()) else "Your bag is empty.", 13, K.DIM))
+	body.add_child(K.lbl("Use items from a Pokémon's page in the Box." if (ks.size() or hs.size() or G.get("tms", {}).size()) else "Your bag is empty.", 13, K.DIM))
 	var row := func(k, name: String, n: int, desc := "") -> void:
 		var p := K.boxp(); var v := K.vbox(2); p.add_child(v); var h := K.hbox(4); h.add_child(K.item_icon(k)); h.add_child(K.lbl("%s x %d" % [name, n], 16, Color.WHITE, false)); v.add_child(h)
 		if desc != "": v.add_child(K.lbl(desc, 12, K.DIM))
 		body.add_child(p)
 	for k in ks: row.call(k, C.DB.dex.items[k], G.items[k])
+	var tml: Array = G.get("tms", {}).keys().filter(func(m): return G.tms[m] > 0)
+	if tml.size():
+		body.add_child(K.lbl("TMs (teach them from a Pokémon's page; each is used up)", 16, K.GOLD))
+		tml.sort_custom(func(a, b): return C.mv(a).n < C.mv(b).n)
+		for m in tml:
+			var p := K.boxp(); var v := K.vbox(2); p.add_child(v); var h := K.hbox(4); h.add_child(tm_icon(m)); h.add_child(K.lbl("TM %s x %d" % [C.mv(m).n, G.tms[m]], 16, Color.WHITE, false)); v.add_child(h)
+			v.add_child(K.lbl(C.move_desc(m), 12, K.DIM)); body.add_child(p)
 	if tsk.size():
 		body.add_child(K.lbl("Mints & Bottle Caps (use them from a Pokémon's page)", 16, K.GOLD))
 		for k in tsk: row.call(k, C.DB.dex.tools[k].n, G.tools[k])

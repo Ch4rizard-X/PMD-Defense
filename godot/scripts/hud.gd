@@ -499,6 +499,9 @@ func show_result() -> void:
 	if B.has("mapOpened"): rw.add_child(ui._chip("", "", "New map: %s!" % B.mapOpened))
 	if B.drop: rw.add_child(_item_chip(B.drop, C.DB.dex.items[B.drop]))
 	if B.hdrop: rw.add_child(_item_chip(B.hdrop, C.DB.dex.held[B.hdrop].n))
+	if B.phase == "win" and not B.has("tmdrop"): B.tmdrop = ui.tm_drop(B.th, B.team); C.save()
+	if B.get("tmdrop", 0):
+		var tc: PanelContainer = ui._chip("", "", "TM %s" % C.mv(B.tmdrop).n); tc.get_child(0).add_child(ui.tm_icon(B.tmdrop)); tc.get_child(0).move_child(tc.get_child(0).get_child(-1), 0); rw.add_child(tc)
 	if B.recruits.size():
 		box.add_child(K.lbl("Joined your team", 18, K.GOLD)); var g := K.grid(); box.add_child(g)
 		for e in B.recruits: g.add_child(ui.mon_card(e))
