@@ -314,10 +314,19 @@ func tower_info() -> void:
 	var ups := K.flow(4); tinfo_v.add_child(ups)
 	for k in 3:
 		var lv: int = t.up[k]; var c: int = BT.upgrade_cost(t, k)
-		var b := K.btn("%s %s%s\n%s" % [BT.UPG.n[k], "●".repeat(lv), "○".repeat(BT.UPG.max - lv), ("$%d (+%d%%)" % [c, int(round(BT.UPG.step * 100))]) if c else "Max"], func():
+		var b := K.btn("", func():
 			if BT.buy_upgrade(t, k): tower_info(); refresh_hud()
 			else: K.toast("Not enough battle cash"), not (c and B.cash >= c), true)
 		b.disabled = c == 0; ups.add_child(b)
+		# level dots are drawn, not text: the font has no ● / ○, and the fallback fonts drew them at different sizes
+		var col: Color = b.get_theme_color("font_disabled_color" if b.disabled else "font_color")
+		var cc := CenterContainer.new(); cc.set_anchors_preset(Control.PRESET_FULL_RECT); cc.mouse_filter = Control.MOUSE_FILTER_IGNORE; b.add_child(cc)
+		var bv := K.vbox(1); bv.mouse_filter = Control.MOUSE_FILTER_IGNORE; cc.add_child(bv)
+		var top := K.hbox(6); top.alignment = BoxContainer.ALIGNMENT_CENTER; top.mouse_filter = Control.MOUSE_FILTER_IGNORE; bv.add_child(top)
+		var nl := K.lbl(BT.UPG.n[k], 16, col, false); top.add_child(nl)
+		var dots := UpDots.new(); dots.n = lv; dots.of = BT.UPG.max; dots.col = col; top.add_child(dots)
+		var cl := K.lbl(("$%d (+%d%%)" % [c, int(round(BT.UPG.step * 100))]) if c else "Max", 16, col, false); cl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER; bv.add_child(cl)
+		b.custom_minimum_size = bv.get_combined_minimum_size() + Vector2(24, 12)
 	var modes := K.flow(4); tinfo_v.add_child(modes)
 	for kn in [["first", "First"], ["last", "Last"], ["strong", "Strong"], ["close", "Close"]]:
 		modes.add_child(K.btn(kn[1], func(): t.mode = kn[0]; tower_info(), t.mode != kn[0], true))
@@ -447,6 +456,7 @@ func show_result() -> void:
 	h.add_child(K.btn("Same route, new layout", func(): K.close_panel(false); ui.route.seed = randi() % 1000000000; ui.begin_battle()))
 	h.add_child(K.btn("Back to routes", func(): K.close_panel(false); BT.B = null; ui.show_hub("routes"), true))
 	if meter: meter.visible = false
+	if grip: grip.visible = false
 func _item_chip(id, name: String) -> PanelContainer:
 	var c: PanelContainer = ui._chip("", "", name); c.get_child(0).add_child(K.item_icon(id)); c.get_child(0).move_child(c.get_child(0).get_child(-1), 0); return c
 func _count_up(chip: PanelContainer, to: int) -> void:
@@ -461,12 +471,33 @@ func meter_show() -> void:
 		meter.custom_minimum_size = Vector2(150, 0); add_child(meter)
 		meter_v = K.vbox(2); meter.add_child(meter_v)
 		meter.gui_input.connect(_meter_input)
-	meter.visible = G.opts.get("meter", false) and not B.over
+		grip = MeterGrip.new(); add_child(grip); grip.gui_input.connect(_grip_input)
+	meter.visible = G.opts.get("meter", false) and not B.over; grip.visible = meter.visible
 	_meter_place(); meter_draw(meter_v, met_tab, false)
 func _meter_place() -> void:
 	var P = G.opts.get("meterPos", null); var vs := size; meter.reset_size()
-	if P == null: meter.position = Vector2(vs.x - meter.size.x - 6, hud_space + 4)
-	else: meter.position = Vector2(clampf(P[0] * vs.x, 0, max(0, vs.x - meter.size.x)), clampf(P[1] * vs.y, 0, max(0, vs.y - min(meter.size.y, 60))))
+	var k: float = clampf(float(G.opts.get("meterScale", 1.0)), 0.7, 3.0); meter.scale = Vector2(k, k); var ms: Vector2 = meter.size * k
+	if P == null: meter.position = Vector2(vs.x - ms.x - 6, hud_space + 4)
+	else: meter.position = Vector2(clampf(P[0] * vs.x, 0, max(0, vs.x - ms.x)), clampf(P[1] * vs.y, 0, max(0, vs.y - min(ms.y, 60))))
+	if grip: grip.position = meter.position + ms - grip.size; grip.visible = meter.visible   # inside the corner, so it never goes off-screen
+# resize: drag the grip at the meter's bottom-right corner; the whole meter (text and icons) scales, and the size is saved
+var grip: Control; var _gdrag = null
+func _grip_input(ev: InputEvent) -> void:
+	if ev is InputEventMouseButton and ev.button_index == MOUSE_BUTTON_LEFT:
+		if ev.pressed: _gdrag = {"s": ev.global_position, "k": meter.scale.x, "w": meter.size.x * meter.scale.x}; _meter_hold = true
+		else:
+			if _gdrag: C.save()
+			_gdrag = null; _meter_hold = false
+		accept_event()
+	elif ev is InputEventMouseMotion and _gdrag:
+		var d: Vector2 = ev.global_position - _gdrag.s
+		G.opts.meterScale = clampf(_gdrag.k * (_gdrag.w + (d.x + d.y) / 2.0) / _gdrag.w, 0.7, 3.0); _meter_place(); accept_event()
+class MeterGrip extends Control:   # three diagonal lines, like a window's resize corner
+	func _init() -> void: custom_minimum_size = Vector2(22, 22); size = custom_minimum_size; mouse_filter = Control.MOUSE_FILTER_STOP; mouse_default_cursor_shape = Control.CURSOR_FDIAGSIZE
+	func _draw() -> void:
+		for i in 3:
+			var o := 6.0 + i * 5.0
+			draw_line(Vector2(size.x - 3, size.y - 3 - o), Vector2(size.x - 3 - o, size.y - 3), Color(1, 0.85, 0.3, 0.95), 2.0, true)
 func _meter_input(ev: InputEvent) -> void:   # drag the meter anywhere (a short tap still works on its tabs and rows)
 	if ev is InputEventMouseButton and ev.button_index == MOUSE_BUTTON_LEFT:
 		if ev.pressed: _mdrag = {"s": ev.global_position, "o": meter.position, "moved": false}; _meter_hold = true
@@ -503,12 +534,13 @@ func meter_draw(box: VBoxContainer, tab: String, full: bool) -> void:
 		elif tab == "dmg": txt = "%s  %d/s  %d%%" % [ui._num(m.dmg), round(m.dmg / secs), pct]
 		elif tab == "ko": txt = "%d  %d%%" % [m.ko, pct]
 		else: txt = "%d s control%s" % [round(m.ctl), (" - %s over time" % ui._num(m.dot)) if m.dot else ""]
-		var row := Control.new(); row.custom_minimum_size = Vector2(0, 26 if full else 18); row.mouse_filter = Control.MOUSE_FILTER_STOP; box.add_child(row)
+		var ic: int = (32 if full else 24) if _bar_over() else (22 if full else 14)   # PC: bigger Pokémon icons, they were barely visible
+		var row := Control.new(); row.custom_minimum_size = Vector2(0, max(ic, 26 if full else 18)); row.mouse_filter = Control.MOUSE_FILTER_STOP; box.add_child(row)
 		var barc := ColorRect.new(); barc.color = Color(C.TCOL[C.SP[r.e.id].t[0]], 0.55); barc.mouse_filter = Control.MOUSE_FILTER_IGNORE; row.add_child(barc)
 		var fr: float = max(0.02, val.call(r) / mx)
 		row.resized.connect(func(): barc.size = Vector2(row.size.x * fr, row.size.y))
 		var h := K.hbox(4); h.set_anchors_preset(Control.PRESET_FULL_RECT); h.mouse_filter = Control.MOUSE_FILTER_IGNORE; row.add_child(h)
-		h.add_child(K.icon(r.e.id, 22 if full else 14))
+		h.add_child(K.icon(r.e.id, ic))
 		var nm := K.lbl(("%d. " % (i + 1) if full else "") + C.SP[r.e.id].n + ("  MVP" if (full and i == 0 and tab == "dmg") else ""), 14 if full else 11, Color.WHITE, false); nm.size_flags_horizontal = Control.SIZE_EXPAND_FILL; nm.clip_text = true; h.add_child(nm)
 		h.add_child(K.lbl(txt, 14 if full else 11, Color.WHITE, false))
 		row.gui_input.connect(func(ev):
@@ -602,3 +634,14 @@ func _tap(pos: Vector2, touch: bool) -> void:
 			if e.hp > 0 and d < ed: ed = d; be = e
 		B.selE = be
 	tower_info(); refresh_hud()
+
+class UpDots extends Control:   # upgrade level: n filled circles out of `of`, all the same size
+	var n := 0; var of := 5; var col := Color.WHITE
+	const R := 4.5; const GAP := 3.0
+	func _get_minimum_size() -> Vector2: return Vector2(of * (R * 2 + GAP) - GAP, R * 2 + 2)
+	func _draw() -> void:
+		var cy := size.y / 2
+		for i in of:
+			var c := Vector2(R + i * (R * 2 + GAP), cy)
+			if i < n: draw_circle(c, R, col)
+			else: draw_arc(c, R - 0.75, 0, TAU, 20, col, 1.5, true)
