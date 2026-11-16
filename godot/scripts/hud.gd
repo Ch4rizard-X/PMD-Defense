@@ -31,7 +31,7 @@ func start(set_idx: int, tier: int, seed: int, team: Array) -> void:
 	vp = SubViewport.new(); vp.transparent_bg = false; vp.canvas_item_default_texture_filter = Viewport.DEFAULT_CANVAS_ITEM_TEXTURE_FILTER_NEAREST; vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS; add_child(vp)
 	view = load("res://scripts/view.gd").new(); vp.add_child(view)
 	map_rect = TextureRect.new()
-	if BT.B.get("night", false): map_rect.modulate = ui.BT_NIGHT_TINT   # night light over the same map
+	# night: the map's darkness and lights are drawn by view.gd (the old blue tint is now its shadow colour)
 	map_rect.texture = vp.get_texture(); map_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE; map_rect.stretch_mode = TextureRect.STRETCH_SCALE
 	map_rect.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST; map_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE; add_child(map_rect)
 	var input := Control.new(); input.set_anchors_preset(Control.PRESET_FULL_RECT); input.mouse_filter = Control.MOUSE_FILTER_STOP; input.gui_input.connect(_on_input); add_child(input)

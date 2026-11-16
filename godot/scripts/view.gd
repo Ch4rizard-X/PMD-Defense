@@ -12,7 +12,7 @@ const STS_COL := {"paralysis": Color("#ff0"), "sleep": Color("#aaf"), "freeze": 
 var PROJ_FRONT := {"efob013/anim48": PI / 2, "efob136/anim16": PI / 2, "efob136/anim24": PI / 2, "efob062/anim00": PI / 2,
 	"efob052/anim00": PI / 2, "efob118/anim00": PI / 2, "efob013/anim32": PI / 2, "efob013/anim08": 0.0,
 	"efob069/anim00": PI / 2, "efob127/anim00": PI / 2, "efob013/anim16": -PI / 2}   # Megahorn and Icicle Spear lead with their point
-var flash: Node2D; var sky: Node2D; var glitch: Node2D
+var flash: Node2D; var sky: Node2D; var glitch: Node2D; var dark: Node2D; var lights: Node2D
 var font: Font
 
 func _ready() -> void:
@@ -23,6 +23,36 @@ func _ready() -> void:
 	sh.code = "shader_type canvas_item;\nvoid fragment(){ vec4 c = texture(TEXTURE, UV); COLOR = vec4(1.0, 1.0, 1.0, c.a * COLOR.a); }"
 	var mat := ShaderMaterial.new(); mat.shader = sh; flash.material = mat
 	flash.draw.connect(_draw_flash); add_child(flash)
+	# ---- night lights (the user's choice): the night is a darkness layer (multiplied over the map and sprites) with holes
+	# of light around your team and around Pokémon that glow in their games; on top, glows: those light sources' coloured
+	# halos, an aura on wild Ghost / Dark types at night, and shinies (gold) and Alphas (red) at any time
+	dark = Node2D.new(); dark.name = "Dark"
+	var dsh := Shader.new()
+	dsh.code = """shader_type canvas_item;
+render_mode blend_mul;
+uniform vec4 L[48];
+uniform int n = 0;
+uniform vec3 tint = vec3(0.3, 0.36, 0.66);
+varying vec2 wp;
+void vertex(){ wp = VERTEX; }
+void fragment(){
+	float l = 0.0;
+	for (int i = 0; i < 48; i++) {
+		if (i >= n) break;
+		float d = distance(wp, L[i].xy);
+		l = max(l, (1.0 - smoothstep(L[i].z * 0.35, L[i].z, d)) * L[i].w);
+	}
+	COLOR = vec4(mix(tint, vec3(1.0), l), 1.0);
+}"""
+	var dm := ShaderMaterial.new(); dm.shader = dsh; dark.material = dm
+	dark.draw.connect(func():
+		if BT.B and BT.B.get("night", false): dark.draw_rect(Rect2(0, 0, BT.B.M.W * TZ, BT.B.M.H * TZ), Color.WHITE))
+	add_child(dark)
+	lights = Node2D.new(); lights.name = "Lights"
+	var lm := CanvasItemMaterial.new(); lm.blend_mode = CanvasItemMaterial.BLEND_MODE_ADD; lights.material = lm
+	var gt := GradientTexture2D.new(); gt.fill = GradientTexture2D.FILL_RADIAL; gt.fill_from = Vector2(0.5, 0.5); gt.fill_to = Vector2(1.0, 0.5); gt.width = 64; gt.height = 64
+	var gr := Gradient.new(); gr.set_color(0, Color(1, 1, 1, 1)); gr.set_color(1, Color(1, 1, 1, 0)); gt.gradient = gr; _glow_tex = gt
+	lights.draw.connect(_draw_lights); add_child(lights)
 	sky = Node2D.new(); sky.name = "Sky"; sky.draw.connect(_draw_sky); add_child(sky)
 	# Ultra Wormhole (the user's choice): the map glitches - bands of it jump sideways in bursts, red / blue edges drift
 	# apart and back, and its colours slowly cycle. Drawn behind everything else, on the map only.
@@ -52,8 +82,56 @@ void fragment(){
 	texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 
 func _process(_dt: float) -> void:
-	if BT.B: queue_redraw(); flash.queue_redraw(); sky.queue_redraw(); glitch.queue_redraw()
+	if BT.B:
+		queue_redraw(); flash.queue_redraw(); sky.queue_redraw(); glitch.queue_redraw(); lights.queue_redraw()
+		if BT.B.get("night", false): _set_night_lights(); dark.queue_redraw()
 
+# Pokémon that glow in their own games (their Pokédex entries: Chinchou / Lanturn's lights, Volbeat's tail, Ampharos'
+# tail, Finneon / Lumineon's patterns, Litwick's line's flames, Morelull / Shiinotic's spores) plus every Fire type
+const GLOWERS := {170: Color(1, 0.95, 0.5), 171: Color(1, 0.95, 0.5), 313: Color(0.85, 1, 0.45), 181: Color(1, 0.75, 0.35),
+	456: Color(0.5, 0.85, 1), 457: Color(0.6, 0.8, 1), 607: Color(0.75, 0.55, 1), 608: Color(0.75, 0.55, 1), 609: Color(0.75, 0.55, 1),
+	755: Color(0.6, 1, 0.75), 756: Color(0.6, 1, 0.75)}
+const FIRE_GLOW := Color(1, 0.6, 0.25)
+var _glow_tex: Texture2D
+func _glow_col(id: int):
+	if GLOWERS.has(id): return GLOWERS[id]
+	if GLOWERS.has(int(C.SP.get(id, {}).get("base", 0))): return GLOWERS[int(C.SP[id].base)]
+	return FIRE_GLOW if C.SP.get(id, {}).get("t", []).has(9) else null
+func _set_night_lights() -> void:   # light holes in the darkness: x, y, radius, strength
+	var B = BT.B; var L := []
+	for t in B.towers:
+		L.append(Vector4(t.x, t.y, 34 * SPR, 0.75))
+		if _glow_col(t.e.id) != null: L.append(Vector4(t.x, t.y, 56 * SPR, 0.95))
+	for e in B.en:
+		if e.hp > 0 and not e.get("under", false) and _glow_col(e.id) != null: L.append(Vector4(e.x, e.y - _lift(e), 36 * ESPR, 0.85))
+	L = L.slice(0, 48)
+	dark.material.set_shader_parameter("n", L.size())
+	while L.size() < 48: L.append(Vector4.ZERO)
+	dark.material.set_shader_parameter("L", L)
+func _halo(x: float, y: float, r: float, c: Color) -> void:
+	draw_texture_rect_to(lights, x, y, r, c)
+func draw_texture_rect_to(ci: CanvasItem, x: float, y: float, r: float, c: Color) -> void:
+	ci.draw_texture_rect(_glow_tex, Rect2(x - r, y - r, r * 2, r * 2), false, c)
+func _draw_lights() -> void:
+	var B = BT.B
+	if B == null: return
+	var night: bool = B.get("night", false); var p := 0.5 + 0.5 * sin(B.time * 3)
+	if night:
+		for t in B.towers:
+			var gc = _glow_col(t.e.id)
+			if gc != null: _halo(t.x, t.y - 8 * SPR, 30 * SPR, Color(gc.r, gc.g, gc.b, 0.22 + 0.08 * p))
+	for e in B.en:
+		if e.hp <= 0 or e.get("under", false) or (e.get("hide", false) and e.get("rev", 0.0) <= 0): continue
+		var y: float = e.y - _lift(e) - 8 * ESPR
+		if night:
+			var gc = _glow_col(e.id)
+			if gc != null: _halo(e.x, y, 24 * ESPR, Color(gc.r, gc.g, gc.b, 0.22 + 0.08 * p))
+			var sp: Dictionary = C.SP.get(e.id, {})
+			if sp.get("t", []).has(7) or sp.get("t", []).has(16):   # Ghost / Dark aura at night
+				var q := 0.5 + 0.5 * sin(B.time * 4 + e.ph)
+				_halo(e.x, y, 22 * ESPR, Color(0.55, 0.2, 0.85, 0.22 + 0.16 * q) if sp.t.has(7) else Color(0.8, 0.15, 0.25, 0.2 + 0.16 * q))
+		if e.get("shiny", false): _halo(e.x, y, 20 * ESPR, Color(1, 0.9, 0.45, 0.16 + 0.1 * (0.5 + 0.5 * sin(B.time * 5 + e.ph))))
+		if e.get("alpha", false): _halo(e.x, y, 30 * ESPR, Color(1, 0.2, 0.15, 0.22 + 0.1 * p))
 # ---------- pieces ----------
 func anim_frame(a: Dictionary, t: float, loop := true) -> int:
 	var tot := BT.fx_len(a) * 60.0; var ft := int(floor(t * 60))
