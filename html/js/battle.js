@@ -272,6 +272,7 @@ function towerAct(t) {
 function aoe(M) { return M.tg === 9 || M.tg === 11 || M.tg === 14 || M.tg === 12; }
 function fire(t, b, st) {
   const M = mv(b.m), fx = DB.fx.moves[b.m] || {};
+  moveSfx(b.m);   // the move's own sound
   t.dir = dirRow(b.tg.x - t.x, b.tg.y - t.y); t.anim = M.c === 2 ? 'Attack' : 'Shoot'; t.at = 0;
   let cd = 5.5 / Math.sqrt(Math.max(5, M.pp)) * (M.pr > 0 ? 0.8 : 1);
   cd /= 1 + st[5] * STAGE(bufOf(t, 5)) / 150;
@@ -756,7 +757,7 @@ const slowE = (e, k, f, d) => { (e.sl || (e.sl = {}))[k] = [f, B.time + d]; mete
 function skSpeed(e) { let v = 1; if (e.sl) for (const k in e.sl) { const [f, u] = e.sl[k]; if (u > B.time) v *= f; else delete e.sl[k]; } if (e.tr && e.tr[1] > B.time) v *= e.tr[0]; return v; }
 function enTypes(e) { const o = e.tyo; if (!o || o.u <= B.time) return SP[e.id].t; return o.add ? [...new Set(SP[e.id].t.concat(o.t))].slice(0, 3) : o.t; }
 function skFx(m, x, y, dir) { const f = DB.fx.moves[m]; if (f) { const r = f.h || f.u; if (r) addFx(r, x, y - 8 * ESPR, dir || 0); } }
-function skUse(t, m, e) { const f = DB.fx.moves[m]; if (f && f.u) addFx(f.u, t.x, t.y, t.dir); if (e) { t.dir = dirRow(e.x - t.x, e.y - t.y); skFx(m, e.x, e.y, t.dir); } t.anim = 'Shoot'; t.at = 0; }
+function skUse(t, m, e) { moveSfx(m); const f = DB.fx.moves[m]; if (f && f.u) addFx(f.u, t.x, t.y, t.dir); if (e) { t.dir = dirRow(e.x - t.x, e.y - t.y); skFx(m, e.x, e.y, t.dir); } t.anim = 'Shoot'; t.at = 0; }
 const near = (t, r) => B.towers.filter(o => o !== t && Math.hypot(o.x - t.x, o.y - t.y) <= (r || 90));
 function skAttack(t, m, st, src) {   // a full attack from a skill (Copycat, Metronome, Nature Power): same hit rules as a normal attack
   const M = mv(m); if (!M) return false; const r = RANGE[M.c] ? towerRange(t, m) : skR(t), list = inRange(t, r).filter(e => canHit(t, m, e)); if (!list.length) return false;

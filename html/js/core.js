@@ -60,6 +60,20 @@ function sfx(key) {
   if (key === 'lvl') SND.lvlUntil = now + buf.duration * 1000;
 }
 
+/* a move's own sound (Explorers of Sky's, from its move-animation data; DB.snd.mv: move id -> file; it ships with the app's
+   data, so older apps play none). Kept from becoming noise: the same sound at most every 0.12 s, any move sound at most
+   every 0.05 s, at most 4 at once (a new one is skipped, nothing is cut off). Same rules as Godot (snd.gd move_sfx). */
+const MVSND = { last: {}, any: 0, live: 0 };
+function moveSfx(m) {
+  const f = DB.snd.mv && DB.snd.mv[m]; if (!f || !ACTX || (G && G.opts && G.opts.mute)) return;
+  const now = performance.now(); if (now - MVSND.any < 50 || now - (MVSND.last[f] || -1e9) < 120 || MVSND.live >= 4) return;
+  const play = buf => { const s = ACTX.createBufferSource(), g = ACTX.createGain(); g.gain.value = SND.sfxVol * 0.8; s.buffer = buf;
+    s.connect(g).connect(ACTX.destination); MVSND.live++; s.onended = () => { MVSND.live--; }; s.start(); };
+  MVSND.any = now; MVSND.last[f] = now;
+  if (SFXBUF['mv:' + f]) return play(SFXBUF['mv:' + f]);
+  fetch(asset('snd/' + f + '.mp3')).then(r => r.arrayBuffer()).then(b => ACTX.decodeAudioData(b)).then(buf => { SFXBUF['mv:' + f] = buf; play(buf); }).catch(() => {});
+}
+
 /* ---------- Pokémon maths (main-series formulas, IVs 15, no EVs) ---------- */
 /* main-series stat formula: IVs 0-31, nature x1.1 / x0.9 on one stat each (no EVs) */
 function calcStats(id, lv, iv, nat) {
