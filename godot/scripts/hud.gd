@@ -39,8 +39,10 @@ func start(set_idx: int, tier: int, seed: int, team: Array) -> void:
 func _fix_aspect() -> void:   # make the map in the shape of the space under the top bar (the team row floats over the map)
 	var a := play_aspect()
 	if absf(a - B.aspect) > 0.01: B.aspect = a; B.M = MG.gen_map(B.set, B.portrait, B.seed, null, a, B.tier)
+# PC (Windows) screens are big: the top bar floats over the map instead of taking a strip above it
+func _bar_over() -> bool: return OS.has_feature("pc")
 func play_aspect() -> float:
-	var vs := get_viewport_rect().size; var h: float = max(1, vs.y - hud_space)
+	var vs := get_viewport_rect().size; var h: float = max(1, vs.y - (0.0 if _bar_over() else hud_space))
 	return max(vs.x, h) / max(1, min(vs.x, h))
 
 # ---------- the top bar ----------
@@ -186,7 +188,7 @@ func layout() -> void:
 	hud_space = bar.position.y + bar.get_combined_minimum_size().y * k + 4
 	bossbar.position = Vector2((vs.x - 260) / 2, hud_space + 2)
 	var M: Dictionary = B.M; var mw: float = M.W * 24; var mh: float = M.H * 24
-	var top := hud_space; var ah: float = vs.y - top
+	var top := 0.0 if _bar_over() else hud_space; var ah: float = vs.y - top   # on PC the top bar sits over the map
 	var s0: float = min(vs.x / mw, ah / mh); var s := s0 * zoom
 	if zc == null: zc = Vector2(mw / 2, mh / 2)
 	var ox: float = vs.x / 2 - zc.x * s; var oy: float = top + ah / 2 - zc.y * s
