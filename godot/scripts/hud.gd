@@ -125,6 +125,7 @@ func _heavy_hook() -> void:
 		if e.eid > _hv_seen:
 			_hv_seen = max(_hv_seen, e.eid)
 			if em > 1.0: e.hp = int(e.hp * em); e.max = int(e.max * em)
+			if B.th >= 2.9 and not e.hide and C.SP[e.id].t.has(7): e.hide = true   # Ghosts hide from Beginner tier 5 (app builds before v26 used 3)
 			if heavy:
 				e.hp *= 2; e.max *= 2
 				if mid != null and e.id == mid.id and e.lv == mid.lv and not e.get("mid", false):

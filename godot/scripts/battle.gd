@@ -44,7 +44,7 @@ func lv_range(tier: float) -> Array:   # tier here is the fight's threat (threat
 # tier traits: each one only for wild Pokémon that really know the move (or have the ability) at their level
 const PROTECT_MOVES := [182, 197, 588, 596, 661, 792, 852, 908]
 const WX_MOVES := {240: "rain", 241: "sun", 201: "sand", 258: "hail", 883: "hail"}
-const TRAITS := [[3, "Ghost types hide, Dig users burrow, Steel / Rock armoured"], [5, "Legendary bosses"], [6, "Healers: self-healing moves restore HP once when low; Regenerator heals slowly"],
+const TRAITS := [[2.9, "Ghost types hide"], [3, "Dig users burrow, Steel / Rock armoured"], [5, "Legendary bosses"], [6, "Healers: self-healing moves restore HP once when low; Regenerator heals slowly"],
 	[9, "Protect users raise a shield when hit"], [12, "Sprinters: speed-boosting and priority-move users dash"], [15, "Teleport users jump ahead along the path"]]
 func wild_traits(id: int, lv: int, ak: String, tier: float) -> Dictionary:
 	var ms := []
@@ -215,7 +215,7 @@ func spawn(s: Dictionary, d := 0.0) -> Dictionary:
 		"lane": (rnd() * 2 - 1) * 11, "ph": rnd() * 6.3, "sw": 0.5 + rnd() * 0.6, "pace": 0.88 + rnd() * 0.24,
 		"r": s.r if s.has("r") else randi() % B.M.routes.size(),
 		"air": (sp.t.has(2) and not GROUND_FLYERS.has(s.id)) or ak == "levitate",     # flyers take the shortcut line
-		"hide": B.th >= 3 and sp.t.has(7), "rev": 0.0,                                  # Ghost types are hidden until a seer is near
+		"hide": B.th >= 2.9 and sp.t.has(7), "rev": 0.0,                                  # Ghost types are hidden until a seer is near
 		"dig": B.th >= 3 and C.moves_at(s.id, s.lv).has(91), "under": false, "digt": 1 + rnd() * 2,   # ones that know Dig burrow
 		"armor": B.th >= 3 and (sp.t.has(8) or sp.t.has(5)),
 		"bst": {3: 0, 5: 0, 6: 0}, "sh": 0, "shm": 0, "sht": 0.0, "shcd": 0.0, "tt": 4 + rnd() * 3, "dt2": 2 + rnd() * 3, "dash": 0.0, "px": null, "py": null, "dead": 0.0}

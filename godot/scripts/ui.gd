@@ -344,7 +344,8 @@ func route_panel(i: int) -> void:
 		bt.add_child(K.btn("New layout", func(): r.seed = randi() % 1000000000; self_ref.call(self_ref), true))
 		bt.add_child(K.btn("Choose team ▶", func(): K.close_panel(false); show_team()))
 		var tr := []
-		for x in BT.TRAITS: if x[0] <= th: tr.append(x[1])
+		var trs: Array = BT.TRAITS if BT.TRAITS[0][0] < 3 else [[2.9, "Ghost types hide"], [3, "Dig users burrow, Steel / Rock armoured"]] + BT.TRAITS.slice(1)   # older app builds
+		for x in trs: if x[0] <= th: tr.append(x[1])
 		if tr.size(): box.add_child(K.rich("[b]Wild traits here:[/b]\n" + "\n".join(tr), 13))
 		var gs := []; var nx := i + 1
 		if nx < C.NMAPS and C.map_group(nx) == gi and not C.map_open(nx): gs.append("Win here to open the next map.")
@@ -478,9 +479,9 @@ func mon_panel(e: Dictionary, after = null) -> void:
 		var sp := K.boxp(); var spv := K.vbox(2); sp.add_child(spv); box.add_child(sp)
 		if why != null:
 			var eh := K.hbox(4); eh.add_child(K.glyph("eye", 14)); eh.add_child(K.lbl("Sees hidden Pokémon")); spv.add_child(eh)
-			spv.add_child(K.lbl("Reveals hidden Ghost types in its range (tier 3+): " + why, 12, K.DIM))
+			spv.add_child(K.lbl("Reveals hidden Ghost types in its range (from Beginner tier 5): " + why, 12, K.DIM))
 		else:
-			spv.add_child(K.lbl("Can't see hidden Pokémon")); spv.add_child(K.lbl("Hidden Ghost types (tier 3+) need a Psychic or Ghost type, Foresight, Odor Sleuth, Miracle Eye, Keen Eye or Frisk nearby", 12, K.DIM))
+			spv.add_child(K.lbl("Can't see hidden Pokémon")); spv.add_child(K.lbl("Hidden Ghost types (from Beginner tier 5) need a Psychic or Ghost type, Foresight, Odor Sleuth, Miracle Eye, Keen Eye or Frisk nearby", 12, K.DIM))
 		var H = C.DB.dex.held.get(e.it, null)
 		var hp := K.boxp(); var hv2 := K.vbox(2); hp.add_child(hv2); box.add_child(hp)
 		var hh := K.hbox(4); hv2.add_child(hh)
