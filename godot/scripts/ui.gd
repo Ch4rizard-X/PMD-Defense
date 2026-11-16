@@ -26,6 +26,7 @@ func _notification(what: int) -> void:
 	if what == NOTIFICATION_APPLICATION_PAUSED: C.save()
 
 # the menu size option (Small / Medium / Large / Extra large)
+const BT_NIGHT_TINT := Color(0.5, 0.58, 0.95)   # night: the same tiles under a blue night light (a tint, no new art)
 const UISIZE := {"s": ["Small", 0.85], "m": ["Medium", 1.0], "l": ["Large", 1.2], "xl": ["Extra large", 1.4]}
 func apply_ui_size() -> void:
 	_prune_panel_fits()
@@ -69,7 +70,7 @@ func show_title() -> void:
 	st.add_child(b)
 	if G.box.size():
 		var nopen := 0
-		for i in C.DB.ts.size(): if C.map_open(i): nopen += 1
+		for i in C.NMAPS: if C.map_open(i): nopen += 1
 		var info := K.lbl("%d maps open - best tier %d - %d Pokémon - Pokédex %d" % [nopen, C.best_tier(), G.box.size(), G.own.size()], 13, K.DIM); info.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER; info.custom_minimum_size.x = 300; st.add_child(info)
 	check_update(st)
 	pic.fit.call_deferred()
@@ -207,10 +208,10 @@ func show_hub(tab := "") -> void:
 	var v := K.vbox(8); v.size_flags_horizontal = Control.SIZE_EXPAND_FILL; m.add_child(v)
 	var top := K.flow(8); v.add_child(top)
 	var nopen := 0
-	for i in C.DB.ts.size(): if C.map_open(i): nopen += 1
+	for i in C.NMAPS: if C.map_open(i): nopen += 1
 	top.add_child(_chip("img/ui/coin.png", "", _num(G.money)))
 	top.add_child(_chip("img/ui/badge.png", "Rescue Points ", str(G.rp)))
-	top.add_child(_chip("", "Maps ", "%d/%d" % [nopen, C.DB.ts.size()]))
+	top.add_child(_chip("", "Maps ", "%d/%d" % [nopen, C.NMAPS]))
 	top.add_child(_chip("", "Best tier ", str(C.best_tier())))
 	top.add_child(_chip("", "Pokédex ", "%d/%d" % [G.own.size(), _anim_count()]))
 	var ob := K.btn("Options", func(): options_panel(func(): show_hub()), true, true); ob.icon = K.glyph("gear", 16).texture; ob.expand_icon = false; top.add_child(_glyph_btn(ob, "gear"))
@@ -247,8 +248,9 @@ func _chip(icon_path: String, t: String, b: String) -> PanelContainer:
 
 func hub_routes(body: VBoxContainer) -> void:
 	body.add_child(K.lbl("Every map is randomly made when you start it. Each map has its own tiers. One win opens the next map of its group; a high tier on any map opens the next group. Later groups are harder by nature, and pay more.", 13, K.DIM))
+	C.check_specials()
 	var last_g := -1; var g = null
-	for i in C.DB.ts.size():
+	for i in C.NMAPS:
 		var gi: int = C.map_group(i)
 		if gi != last_g:
 			last_g = gi; var MGr: Array = C.MAPGROUP[gi]
@@ -260,6 +262,15 @@ func hub_routes(body: VBoxContainer) -> void:
 		if open: cb.add_child(_center(K.lbl(("Tier %s cleared" % ("%d (max)" % C.MAXTIER if G.get("mtDone", {}).get(i, 0) else str(topt))) if topt else "New", 13, Color("#9f9"))))
 		else: cb.add_child(_center(K.lbl("Win the map before to open" if (i > 0 and C.map_group(i - 1) == gi) else "Clear tier %d on any %s map" % [C.group_gate(gi), C.MAPGROUP[max(0, gi - 1)][0]], 12, Color("#ff9a9a"))))
 		g.add_child(c)
+	if C.DB.ts.size() > C.NMAPS:
+		body.add_child(K.lbl("Special maps", 20, Color("#d79bff"))); g = K.grid(); body.add_child(g)
+		for i in range(C.NMAPS, C.DB.ts.size()):
+			var S: Dictionary = C.DB.ts[i]; var open: bool = C.map_open(i); var topt: int = C.map_cleared(i); var sp: Dictionary = C.SPECIAL.get(C.special_of(i), {})
+			var c := K.card(150, func(): route_panel(i), false, not open); var cb := K.card_box(c)
+			cb.add_child(_swatch(i)); cb.add_child(_center(K.lbl(S.name, 15))); cb.add_child(_types_flow(S.types))
+			if open: cb.add_child(_center(K.lbl(("Tier %d cleared" % topt) if topt else "New", 13, Color("#9f9"))))
+			else: cb.add_child(_center(K.lbl("Opens with the %s maps" % C.MAPGROUP[sp.get("group", 3)][0], 12, Color("#ff9a9a"))))
+			g.add_child(c)
 func _types_flow(types: Array) -> HFlowContainer:
 	var f := K.flow(2); f.alignment = FlowContainer.ALIGNMENT_CENTER; f.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	for t in types: f.add_child(K.type_tag(t))
@@ -294,10 +305,24 @@ func route_panel(i: int) -> void:
 		K.clear(box)
 		var r = route; var gi: int = C.map_group(i); var MG0: Array = C.MAPGROUP[gi]
 		K.panel_title(box, "%s  (%s)" % [S.name, MG0[0]]); box.add_child(_types_flow(S.types))
+		var spc: Dictionary = C.SPECIAL.get(C.special_of(i), {})
+		if spc.size(): box.add_child(K.lbl(spc.note, 13, Color("#d79bff")))
+		# Legendary challenge: on the dungeons where the PMD games have you meet a legendary, after clearing tier 5 there
+		var lgs: Array = C.legends_of(i)
+		if lgs.size():
+			var nms := []
+			for x in lgs: nms.append(C.SP[x].n)
+			if C.map_cleared(i) >= 5:
+				var lh := K.hbox(6); lh.alignment = BoxContainer.ALIGNMENT_CENTER; box.add_child(lh)
+				for lv in [false, true]:
+					lh.add_child(K.btn("Legendary: " + " / ".join(nms) if lv else "Normal", func(): r.legend = lv; self_ref.call(self_ref), r.get("legend", false) != lv, true))
+				if r.get("legend", false): box.add_child(K.lbl("Legendary challenge: %s is the boss every time, 5 levels stronger, and far likelier to ask to join (25%%)." % " / ".join(nms), 13, Color("#ffd84a")))
+			else: box.add_child(K.lbl("%s lives here: clear tier 5 to open its Legendary challenge." % " / ".join(nms), 13, K.DIM))
 		if gi: box.add_child(K.lbl("%s map: harder by nature - every tier here fights like a higher tier on earlier maps (levels, species and traits), with shorter paths, more entrances and water and %d%% more per wave. Rewards x%s." % [MG0[0], int(round((MG0[4] - 1) * 100)), str(MG0[3])], 13, K.DIM))
 		var vs := get_viewport_rect().size
 		var pm := MG.gen_map(i, false, r.seed, null, max(vs.x, vs.y) / min(vs.x, vs.y), r.tier)
 		var prev := RoutePreview.new(); prev.M = pm; prev.custom_minimum_size = Vector2(0, 80); prev.size_flags_horizontal = Control.SIZE_EXPAND_FILL; box.add_child(prev)
+		if r.get("night", G.opts.get("night", false)): prev.modulate = BT_NIGHT_TINT
 		var th: float = C.threat_tier(i, r.tier); var lr: Array = BT.lv_range(th); var stn: int = C.stars_of(i, r.tier)
 		var row := K.hbox(6); row.alignment = BoxContainer.ALIGNMENT_CENTER; box.add_child(row)
 		row.add_child(K.btn("◀", func():
@@ -305,6 +330,15 @@ func route_panel(i: int) -> void:
 		row.add_child(K.lbl("Tier %d  %s%s  -  wild Lv %d-%d  -  %d waves" % [r.tier, "★".repeat(stn), "☆".repeat(3 - stn), min(98, lr[0]), min(100, lr[1]), BT.wave_count(r.tier)], 15, Color.WHITE, false))
 		row.add_child(K.btn("▶", func():
 			if r.tier < C.map_tier(i): r.tier += 1; self_ref.call(self_ref), true, true))
+		# Day / Night (shares the map's tiers and stars); the last choice is remembered
+		if not r.has("night"): r.night = bool(G.opts.get("night", false))
+		var dn := K.hbox(6); dn.alignment = BoxContainer.ALIGNMENT_CENTER; box.add_child(dn)
+		for nv in [false, true]:
+			dn.add_child(K.btn("Night" if nv else "Day", func(): r.night = nv; G.opts.night = nv; C.save(); self_ref.call(self_ref), r.night != nv, true))
+		if r.night: box.add_child(K.lbl("Night: Ghost and Dark Pokémon deal 20% more (wild ones are tougher), and night Pokémon turn up 3x as often.", 13, Color("#9db4ff")))
+		var sn: Array = C.SEASONS[C.season()]; var tn := []
+		for x in sn[1]: tn.append(C.TYPES[x])
+		box.add_child(K.lbl("%s: %s types turn up more often%s. Next season in %d %s." % [sn[0], " and ".join(tn), ("; snow falls on grass maps" if C.season() == 3 else ""), C.season_left(), "win" if C.season_left() == 1 else "wins"], 13, [Color("#ffb3d1"), Color("#ffd27a"), Color("#e8a060"), Color("#bfe6ff")][C.season()]))
 		var bt := K.hbox(6); bt.alignment = BoxContainer.ALIGNMENT_CENTER; box.add_child(bt)
 		bt.add_child(K.btn("New layout", func(): r.seed = randi() % 1000000000; self_ref.call(self_ref), true))
 		bt.add_child(K.btn("Choose team ▶", func(): K.close_panel(false); show_team()))
@@ -312,7 +346,7 @@ func route_panel(i: int) -> void:
 		for x in BT.TRAITS: if x[0] <= th: tr.append(x[1])
 		if tr.size(): box.add_child(K.rich("[b]Wild traits here:[/b]\n" + "\n".join(tr), 13))
 		var gs := []; var nx := i + 1
-		if nx < C.DB.ts.size() and C.map_group(nx) == gi and not C.map_open(nx): gs.append("Win here to open the next map.")
+		if nx < C.NMAPS and C.map_group(nx) == gi and not C.map_open(nx): gs.append("Win here to open the next map.")
 		if gi < 3 and not C.map_open(C.group_start(gi + 1)): gs.append("Clear tier %d on any %s map to open the %s maps." % [C.group_gate(gi + 1), C.MAPGROUP[gi][0], C.MAPGROUP[gi + 1][0]])
 		if gs.size(): box.add_child(K.rich("[b]" + "\n".join(gs) + "[/b]", 13))
 		box.add_child(spawn_list(i, r.tier))
@@ -342,6 +376,13 @@ func spawn_list(i: int, tier: int) -> VBoxContainer:
 			if not seen: ic.modulate = Color(0, 0, 0, 0.45)
 			ic.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 			c.add_child(ic); var nl := K.lbl(m.n if seen else "???", 10, Color.WHITE); nl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER; c.add_child(nl); g.add_child(c)
+	# terrain of this map (land from the setting's types, plus its ponds / lava)
+	var lk: String = BT.land_kind(i); var tl := []
+	if lk != "": tl.append({"grass": "Grassland: Grass types do 20% more damage", "rock": "Rocky ground: Rock / Ground / Fighting types get 20% more range", "ice": "Icy ground: Ice types attack 20% faster"}[lk])
+	var liq = C.DB.ts[i].get("liq", 0)
+	if str(liq) == "water": tl.append("Water: Water types standing in it attack 20% faster")
+	elif str(liq) == "lava": tl.append("Lava: Fire types standing in it do 20% more damage")
+	if tl.size(): wrap.add_child(K.rich("[b]Terrain[/b] - " + ". ".join(tl), 13))
 	var nseen := 0
 	for m in SI.pool: if G.seen.has(m.id): nseen += 1
 	wrap.add_child(K.rich("[b]Wild Pokémon here[/b] - %d/%d seen" % [nseen, SI.pool.size()], 13))
@@ -365,6 +406,7 @@ func mon_card(e: Dictionary, on = null, picked := false) -> PanelContainer:
 	var c := K.card(104, on, picked); var cb := K.card_box(c)
 	var top := Control.new(); top.custom_minimum_size = Vector2(0, 48); top.mouse_filter = Control.MOUSE_FILTER_IGNORE; cb.add_child(top)
 	var ic := K.icon(e.id); ic.set_anchors_preset(Control.PRESET_CENTER_TOP); ic.anchor_left = 0.5; ic.anchor_right = 0.5; ic.offset_left = -24; ic.offset_right = 24; ic.offset_bottom = 48; top.add_child(ic)
+	_badges(top, e)
 	var lst := K.sb(K.WIND, Color(1, 1, 1, 0.27), 1, 8, 1); lst.content_margin_left = 5; lst.content_margin_right = 5
 	var lv := PanelContainer.new(); lv.add_theme_stylebox_override("panel", lst); lv.add_child(K.lbl("Lv %d" % e.lv, 11, Color.WHITE, false))
 	# sized by its text, growing leftward from the card's top-right corner (a fixed width let the text spill out)
@@ -406,11 +448,13 @@ func mon_panel(e: Dictionary, after = null) -> void:
 		var s: Dictionary = C.SP[e.id]; var st: Array = C.mon_stats(e)
 		var nx: int = C.xp_for(s.gr, e.lv + 1) if e.lv < C.MAXLV else e.xp; var cur: int = C.xp_for(s.gr, e.lv)
 		var head := K.hbox(10); box.add_child(head)
-		head.add_child(K.anim_icon(e.id, 72))
+		head.add_child(K.anim_icon(C.sid(e), 72))
 		var hv := K.vbox(3); hv.size_flags_horizontal = Control.SIZE_EXPAND_FILL; head.add_child(hv)
 		hv.add_child(K.rich("[color=#ffd84a][font_size=22]%s[/font_size][/color] [font_size=14]Lv %d[/font_size]" % [s.n, e.lv], 16)); hv.add_child(_types_flow_left(s.t))
 		var xp := ProgressBar.new(); xp.show_percentage = false; xp.custom_minimum_size = Vector2(0, 6); xp.max_value = 100
 		xp.value = 100 if e.lv >= C.MAXLV else floor((e.xp - cur) / float(max(1, nx - cur)) * 100); hv.add_child(xp)
+		var fr: int = e.get("fr", 70); var hearts := int(fr / 51.0)   # 0-5 hearts for 0-255 friendship
+		hv.add_child(K.rich("[color=#ff7aa8]%s[/color][color=#5a6a8a]%s[/color] [font_size=12]Friendship %d/255%s[/font_size]" % ["♥".repeat(hearts), "♥".repeat(5 - hearts), fr, ("  -  %d%% more critical hits" % int(round(C.friend_crit(e) * 100))) if fr >= 160 else ""], 13))
 		var N = C.DB.dex.nat[C.nat_of(e) - 1]
 		for i in 6:
 			var c := "up" if (N.up != N.dn and i == N.up) else ("dn" if (N.up != N.dn and i == N.dn) else "")
@@ -483,6 +527,27 @@ func mon_panel(e: Dictionary, after = null) -> void:
 				if o.item: h.add_child(K.item_icon(o.item))
 				h.add_child(K.lbl("(%s)" % o.why, 12, K.DIM, false))
 				if o.ok: h.add_child(K.btn("Evolve", func(): _evolve(e, o, s.n); self_ref.call(self_ref), false, true))
+		# forms (Rotom, Deoxys, Shaymin, Arceus Plates, Silvally Memories) and Kyurem's fusions: out of battle only
+		var fam: Array = C.form_family(e.id)
+		if fam.size() and screen != "battle" and not e.has("mega_from"):
+			box.add_child(K.lbl("Form", 18, K.GOLD))
+			var ff := K.flow(4); box.add_child(ff)
+			for fid in fam:
+				var fs: Dictionary = C.SP[fid]
+				ff.add_child(K.btn(fs.n + ("" if fid != 10006 else " (day only)"), func(): C.set_form(e, fid); C.save(); self_ref.call(self_ref), fid != e.id, true))
+		if screen != "battle" and (e.id == 646 or e.has("fused")):
+			box.add_child(K.lbl("Fusion", 18, K.GOLD))
+			var fu := K.flow(4); box.add_child(fu)
+			if e.has("fused"):
+				fu.add_child(K.btn("Split from %s" % C.SP[e.fused.id].n, func(): C.unfuse(e); C.save(); self_ref.call(self_ref), true, true))
+			else:
+				var any := false
+				for p in G.box:
+					if C.FUSE.has(p.id):
+						any = true
+						var pp: Dictionary = p
+						fu.add_child(K.btn("Fuse with %s (Lv %d) -> %s" % [C.SP[pp.id].n, pp.lv, C.SP[C.FUSE[pp.id]].n], func(): C.fuse(e, pp); C.save(); self_ref.call(self_ref), false, true))
+				if not any: box.add_child(K.lbl("Needs a Reshiram (White Kyurem) or Zekrom (Black Kyurem) in your box.", 13, K.DIM))
 		var cl := K.hbox(6); box.add_child(cl)
 		cl.add_child(K.btn("Close", func(): K.close_panel(), true))
 		if screen == "hub" and G.box.size() > 1:
@@ -910,3 +975,10 @@ func rework_heavy(set_idx: int, tier0: int, seed: int) -> void:
 			var mb = cand[int(floor(R.next() * cand.size()))]
 			list.insert(n / 2, {"id": mb.id, "lv": min(100, lv + 3), "gap": 1.6, "mid": 1})
 		B.waves[w - 1] = list
+# small corner badges on a card: gold star for a shiny, red alpha for an Alpha
+func _badges(parent: Control, e: Dictionary) -> void:
+	var tx := ("★" if e.get("shiny", false) else "") + ("α" if e.get("alpha", false) else "")
+	if tx == "": return
+	var b := K.lbl(tx, 14, Color("#ffd84a") if e.get("shiny", false) else Color("#ff5a5a"), false)
+	b.add_theme_constant_override("outline_size", 4); b.add_theme_color_override("font_outline_color", Color(0, 0, 0))
+	b.position = Vector2(4, 0); b.mouse_filter = Control.MOUSE_FILTER_IGNORE; parent.add_child(b)

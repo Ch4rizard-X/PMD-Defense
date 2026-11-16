@@ -37,7 +37,7 @@ func anim_frame(a: Dictionary, t: float, loop := true) -> int:
 	while f < a.n - 1 and ft >= a.d[f]: ft -= a.d[f]; f += 1
 	return f
 func mon_anim(id: int, name: String):
-	var A = C.DB.anim.get(id, null)
+	var A = C.anim_of(id)
 	if A == null: return null
 	return A.get(name, A.get("Idle", A.get("Walk", null)))
 func draw_mon(ci: CanvasItem, id: int, name: String, t: float, row: int, x: float, y: float, alpha := 1.0, loop := true, sc := -1.0) -> void:
@@ -136,6 +136,9 @@ func _draw() -> void:
 	if B == null: return
 	var M: Dictionary = B.M
 	draw_texture(M.tex, Vector2.ZERO)
+	if B.get("snowlook", false):   # winter: a light dusting of snow on the land and path (water / lava stay clear)
+		if _snow == null or _snow_for != M: _snow = _make_snow(M); _snow_for = M
+		draw_texture_rect(_snow, Rect2(0, 0, M.W * TZ, M.H * TZ), false)
 	draw_gates(M)
 	if B.sel: ring(B.sel.x, B.sel.y, BT.max_range(B.sel), true)
 	if B.ghost and B.placing:
@@ -152,7 +155,7 @@ func _draw() -> void:
 		else: _draw_enemy(it[2])
 	if B.ghost and B.placing:
 		marker(true, B.placing.id, B.ghost.x, B.ghost.y, SPR)
-		draw_mon(self, B.placing.id, "Idle", B.time, 0, B.ghost.x, B.ghost.y, 0.8 if B.ghost.ok else 0.4)
+		draw_mon(self, C.sid(B.placing), "Idle", B.time, 0, B.ghost.x, B.ghost.y, 0.8 if B.ghost.ok else 0.4)
 	for z in B.zap:   # Electric: Chain - a short zigzag between the two enemies
 		var pts := PackedVector2Array([Vector2(z.a.x, z.a.y - 8 * ESPR)])
 		for i in range(1, 5):
@@ -175,11 +178,12 @@ func _draw_tower(t: Dictionary) -> void:
 		draw_arc(Vector2.ZERO, 15 * SPR, 0, TAU, 32, Color(1, 216 / 255.0, 74 / 255.0, 0.5 + 0.5 * p), 2 * 15.0 / 6.0)
 		draw_set_transform(Vector2.ZERO, 0, Vector2.ONE)
 	marker(true, t.e.id, t.x, t.y, SPR)
-	draw_mon(self, t.e.id, t.anim, t.at, t.dir, t.x, t.y, 1.0, t.anim == "Idle")
+	draw_mon(self, C.sid(t.e), t.anim, t.at, t.dir, t.x, t.y, 1.0, t.anim == "Idle")
 	if t.buft > 0: draw_rect(Rect2(t.x - 2, t.y - 30 * SPR, 4, 4), Color("#f84"))
 func _lift(e: Dictionary) -> float: return (12 + sin(BT.B.time * 3 + e.ph) * 2.5 if e.air else 0.0) * ESPR
 func _enemy_anim(e: Dictionary) -> Array:
-	var A = C.DB.anim.get(e.id, {})
+	var A = C.anim_of(C.sid(e))
+	if A == null: A = {}
 	var walk := "Hover" if (e.air and A.has("Hover")) else "Walk"   # flyers use their Hover animation when the sheet has one
 	var an := "Hurt" if (e.hp <= 0 or e.hurt > 0) else ("Idle" if (e.stop > 0 and e.sts != null) else walk)
 	var at: float = e.at * BT.HOVER_SPEED if an == "Hover" else e.at   # flight loops are short: played a bit slower so flapping isn't frantic
@@ -193,7 +197,7 @@ func _draw_enemy(e: Dictionary) -> void:
 	var lift := _lift(e)
 	marker(false, e.id, e.x, e.y, ESPR * (1.3 if e.boss else 1.0), al)
 	var aa := _enemy_anim(e)
-	draw_mon(self, e.id, aa[0], aa[1], e.dir, e.x, e.y - lift, al, true, ESPR)
+	draw_mon(self, C.sid(e), aa[0], aa[1], e.dir, e.x, e.y - lift, al, true, ESPR * (1.5 if e.get("alpha", false) else 1.0))
 	if e.hp <= 0: ko_burst(e.x, e.y - 10 * ESPR, 1 - clampf(e.dead / 0.5, 0, 1), e.boss)
 	if e.hp > 0 and (e.under or (e.hide and not (e.rev > 0))): return
 	if e.hp > 0 and e.sh > 0:
@@ -216,14 +220,14 @@ func _draw_flash() -> void:
 	for e in B.en:
 		if e.hurt > 0.12 and e.hp > 0 and e.d > 0:
 			var aa := _enemy_anim(e)
-			draw_mon(flash, e.id, aa[0], aa[1], e.dir, e.x, e.y - _lift(e), clampf((e.hurt - 0.12) * 5, 0, 0.85), true, ESPR)
+			draw_mon(flash, C.sid(e), aa[0], aa[1], e.dir, e.x, e.y - _lift(e), clampf((e.hurt - 0.12) * 5, 0, 0.85), true, ESPR * (1.5 if e.get("alpha", false) else 1.0))
 
 # ---------- weather: PMD Red's own weather screens (rain, sandstorm, hail) tiled over the map; sun has none in the ROM ----------
 var _sky_mat_add: CanvasItemMaterial
 func _draw_sky() -> void:
 	var B = BT.B
-	if B == null or B.weather == null: return
-	var M: Dictionary = B.M; var k: String = B.weather.k; var w = C.DB.wx.get(k, null)
+	if B == null or (B.weather == null and not B.get("snowlook", false)): return
+	var M: Dictionary = B.M; var k: String = B.weather.k if B.weather != null else "hail"; var w = C.DB.wx.get(k, null)   # no weather: winter's falling snow (just the look)
 	var W: float = M.W * TZ; var H: float = M.H * TZ
 	if _sky_mat_add == null: _sky_mat_add = CanvasItemMaterial.new(); _sky_mat_add.blend_mode = CanvasItemMaterial.BLEND_MODE_ADD
 	if k == "sun":
@@ -266,3 +270,21 @@ func _sun_rays(W: float, H: float) -> void:
 		sky.draw_set_transform(Vector2(x, -H * 0.05), -ang, Vector2.ONE)
 		sky.draw_texture_rect(tex, Rect2(-w / 2, 0, w, lenr), false, Color(1, 1, 1, al * 0.6))
 		sky.draw_set_transform(Vector2.ZERO, 0, Vector2.ONE)
+# ---- winter snow on the tiles: made once per map on a 3-pixel grid (pixel-art sized), drawn over the map tiles
+var _snow: ImageTexture = null; var _snow_for = null
+func _make_snow(M: Dictionary) -> ImageTexture:
+	const G3 := 3
+	var w: int = int(M.W * TZ / G3); var h: int = int(M.H * TZ / G3)
+	var im := Image.create(w, h, false, Image.FORMAT_RGBA8)
+	var rng := RandomNumberGenerator.new(); rng.seed = int(M.seed) ^ 0x5A0B
+	for y in h:
+		for x in w:
+			var tv: int = M.t[mini(int(y * G3 / TZ), M.H - 1)][mini(int(x * G3 / TZ), M.W - 1)]
+			if tv == 2: continue
+			var a := 0.16 if tv == 0 else 0.08                         # frost wash: land a little more than the path
+			var r := rng.randf()
+			if r < (0.10 if tv == 0 else 0.04): a = 0.75                # snow specks
+			elif r < (0.16 if tv == 0 else 0.06): a = 0.4
+			im.set_pixel(x, y, Color(1, 1, 1, a))
+	var tex := ImageTexture.create_from_image(im)
+	return tex

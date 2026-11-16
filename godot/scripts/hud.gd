@@ -25,11 +25,14 @@ func start(set_idx: int, tier: int, seed: int, team: Array) -> void:
 	zoom = 1.0; zc = null
 	var vs := get_viewport_rect().size; var portrait := vs.y > vs.x
 	var bgc := ColorRect.new(); bgc.color = Color("#0a1430"); bgc.set_anchors_preset(Control.PRESET_FULL_RECT); bgc.mouse_filter = Control.MOUSE_FILTER_IGNORE; add_child(bgc)
-	BT.start_battle(set_idx, tier, seed, team, portrait, play_aspect()); ui.rework_heavy(set_idx, tier, seed)
+	BT.legend_boss = C.legends_of(set_idx) if ui.route.get("legend", false) else []
+	BT.start_battle(set_idx, tier, seed, team, portrait, play_aspect(), bool(ui.route.get("night", false))); ui.rework_heavy(set_idx, tier, seed)
 	BT.wave_started.connect(wave_banner); BT.wave_started.connect(func(): _wave_music.call_deferred()); BT.ask_join.connect(func(): ask_join.call_deferred()); BT.finished.connect(func(): show_result.call_deferred())
 	vp = SubViewport.new(); vp.transparent_bg = false; vp.canvas_item_default_texture_filter = Viewport.DEFAULT_CANVAS_ITEM_TEXTURE_FILTER_NEAREST; vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS; add_child(vp)
 	view = load("res://scripts/view.gd").new(); vp.add_child(view)
-	map_rect = TextureRect.new(); map_rect.texture = vp.get_texture(); map_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE; map_rect.stretch_mode = TextureRect.STRETCH_SCALE
+	map_rect = TextureRect.new()
+	if BT.B.get("night", false): map_rect.modulate = ui.BT_NIGHT_TINT   # night light over the same map
+	map_rect.texture = vp.get_texture(); map_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE; map_rect.stretch_mode = TextureRect.STRETCH_SCALE
 	map_rect.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST; map_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE; add_child(map_rect)
 	var input := Control.new(); input.set_anchors_preset(Control.PRESET_FULL_RECT); input.mouse_filter = Control.MOUSE_FILTER_STOP; input.gui_input.connect(_on_input); add_child(input)
 	build_hud()
@@ -96,6 +99,7 @@ func build_team() -> void:
 		var stripe := ColorRect.new(); stripe.color = C.TCOL[C.SP[e.id].t[0]]; stripe.custom_minimum_size = Vector2(0, 3); stripe.mouse_filter = Control.MOUSE_FILTER_IGNORE; v.add_child(stripe)
 		var top := Control.new(); top.custom_minimum_size = Vector2(56, 42); top.mouse_filter = Control.MOUSE_FILTER_IGNORE; v.add_child(top)
 		var ic := K.icon(e.id, 42); ic.position = Vector2(7, 0); top.add_child(ic)
+		ui._badges(top, e)
 		if BT.sees_why(e) != null: top.add_child(ui.eye_badge(true))
 		var tl := K.lbl("", 11, Color.WHITE, false); tl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER; v.add_child(tl)
 		c.gui_input.connect(func(ev): _row_input(ev, e))
@@ -198,7 +202,7 @@ func refresh_hud() -> void:
 
 # ---------- layout: the map fills the space under the top bar; the team row floats over its bottom edge ----------
 func layout() -> void:
-	if B == null or bar == null: return
+	if B == null or bar == null or not is_inside_tree(): return   # (a resize can arrive while the screen is being taken down)
 	var vs := size if size.x > 0 else get_viewport_rect().size
 	# the top bar is one row: if it's wider than the screen it shrinks to fit
 	bar.scale = Vector2.ONE; bar.reset_size()
@@ -288,6 +292,10 @@ func tower_info() -> void:
 		for q in C.quirks(e.id): qs.append(q[0] + ": " + q[1])
 		var txt := "%s - tap the map to place ($%d). %s." % [C.SP[e.id].n, C.place_cost(e), ". ".join(qs)]
 		if ty.has(10) or ty.has(9): txt += " Can stand in %s." % ("water" if ty.has(10) else "lava")
+		if not B.has("land"): B.land = BT.land_kind(B.set)
+		var lp := {"grass": ty.has(11), "rock": ty.has(5) or ty.has(4) or ty.has(1), "ice": ty.has(14)}
+		if lp.get(B.land, false): txt += " " + BT.TERRAIN_TXT[B.land] + " anywhere on this map's land."
+		if (ty.has(10) and B.M.liq == "water") or (ty.has(9) and B.M.liq == "lava"): txt += " " + BT.TERRAIN_TXT["pond" if ty.has(10) else "lava"] + " in the %s." % ("water" if ty.has(10) else "lava")
 		tinfo_v.add_child(K.lbl(txt, 14)); _open_tinfo(); return
 	if t == null and B.get("selE") != null and B.selE.hp > 0:
 		var x: Dictionary = B.selE; var s: Dictionary = C.SP[x.id]; var A = C.DB.dex.abil.get(x.ab, null)
@@ -297,6 +305,9 @@ func tower_info() -> void:
 		if x.dig: tags.append("Digs: underground only Earthquake / Magnitude / Fissure hit")
 		if x.armor: tags.append("Armoured: moves under 60 power do half")
 		if x.boss: tags.append("Boss")
+		if x.get("shiny", false): tags.append("Shiny")
+		if x.get("alpha", false): tags.append("Alpha: 3x HP, perfect IVs, 3x likelier to join")
+		if x.has("rival"): tags.append("%s (rival rescue team): 2x HP, faster, costs 5 lives if it gets through" % x.rival)
 		var h := K.hbox(4); tinfo_v.add_child(h)
 		h.add_child(K.lbl("Wild %s Lv %d" % [s.n, x.lv], 16, Color.WHITE, false))
 		for ty in s.t: h.add_child(K.type_tag(ty))
@@ -316,6 +327,8 @@ func tower_info() -> void:
 	for ty in s.t: h.add_child(K.type_tag(ty))
 	if tg.size(): tinfo_v.add_child(K.lbl(" - ".join(tg), 12, K.DIM))
 	tinfo_v.add_child(ui.qk_line(e.id))
+	var tpk: String = BT.terrain_perk(t)
+	if tpk != "": tinfo_v.add_child(K.lbl(BT.TERRAIN_TXT[tpk], 12, Color("#7ee08a")))   # terrain perk it stands on
 	var x0: int = C.xp_for(s.gr, e.lv); var x1: int = C.xp_for(s.gr, e.lv + 1) if e.lv < C.MAXLV else e.xp
 	var xr := K.hbox(6); tinfo_v.add_child(xr)
 	var xp := ProgressBar.new(); xp.show_percentage = false; xp.custom_minimum_size = Vector2(120, 6); xp.size_flags_vertical = Control.SIZE_SHRINK_CENTER; xp.max_value = 100
@@ -342,11 +355,19 @@ func tower_info() -> void:
 		var col: Color = b.get_theme_color("font_disabled_color" if b.disabled else "font_color")
 		var cc := CenterContainer.new(); cc.set_anchors_preset(Control.PRESET_FULL_RECT); cc.mouse_filter = Control.MOUSE_FILTER_IGNORE; b.add_child(cc)
 		var bv := K.vbox(1); bv.mouse_filter = Control.MOUSE_FILTER_IGNORE; cc.add_child(bv)
-		var top := K.hbox(6); top.alignment = BoxContainer.ALIGNMENT_CENTER; top.mouse_filter = Control.MOUSE_FILTER_IGNORE; bv.add_child(top)
+		var top := K.hbox(4); top.alignment = BoxContainer.ALIGNMENT_CENTER; top.mouse_filter = Control.MOUSE_FILTER_IGNORE; bv.add_child(top)
 		var nl := K.lbl(BT.UPG.n[k], 16, col, false); top.add_child(nl)
 		var dots := UpDots.new(); dots.n = lv; dots.of = BT.UPG.max; dots.col = col; top.add_child(dots)
 		var cl := K.lbl(("$%d (+%d%%)" % [c, int(round(BT.UPG.step * 100))]) if c else "Max", 16, col, false); cl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER; bv.add_child(cl)
-		b.custom_minimum_size = bv.get_combined_minimum_size() + Vector2(24, 12)
+		b.custom_minimum_size = bv.get_combined_minimum_size() + Vector2(12, 10)
+	# Empowerment Seed: once per battle (a Mega / Primal where SpriteCollab animates one, otherwise Awakening)
+	if not B.get("empowered", false):
+		var emp := K.flow(4); tinfo_v.add_child(emp)
+		var mg: Array = C.megas_of(t.e.id)
+		for mid in mg: emp.add_child(K.btn("Empower: %s" % C.SP[mid].n, func(): BT.empower(t, mid); tower_info(), false, true))
+		if mg.is_empty(): emp.add_child(K.btn("Empower (Awaken)", func(): BT.empower(t); tower_info(), false, true))
+	elif t.get("awk", false): tinfo_v.add_child(K.lbl("Awakened: 30% more damage and attack speed", 12, Color("#ffd84a")))
+	elif t.e.has("mega_from") and C.SP[t.e.id].get("form", "") == "mega": tinfo_v.add_child(K.lbl("Empowered for this battle", 12, Color("#ffd84a")))
 	var modes := K.flow(4); tinfo_v.add_child(modes)
 	for kn in [["first", "First"], ["last", "Last"], ["strong", "Strong"], ["close", "Close"]]:
 		modes.add_child(K.btn(kn[1], func(): t.mode = kn[0]; tower_info(), t.mode != kn[0], true))
@@ -412,7 +433,10 @@ func ask_join() -> void:   # a knocked-out wild Pokémon asks to join: the battl
 	hv.add_child(K.lbl("Box: %d Pokémon%s" % [G.box.size(), " - it would join this battle too" if B.team.size() < 10 else ""], 12, K.DIM))
 	var h := K.hbox(6); box.add_child(h)
 	h.add_child(K.btn("Accept", func():
-		var e: Dictionary = C.make_mon(a.id, a.lv, a.nat, a.iv); e.ab = a.ab; G.box.append(e); B.recruits.append(e)
+		var e: Dictionary = C.make_mon(a.id, a.lv, a.nat, a.iv); e.ab = a.ab
+		if a.get("shiny", false): e.shiny = true
+		if a.get("alpha", false): e.alpha = true
+		G.box.append(e); B.recruits.append(e)
 		if B.team.size() < 10: B.team.append(e); build_team()
 		K.toast("%s joined your team!" % s.n, a.id); C.save(); K.close_panel()))
 	h.add_child(K.btn("Decline", func(): B.declined[a.id] = 1; K.close_panel(), true))
@@ -564,7 +588,7 @@ func meter_draw(box: VBoxContainer, tab: String, full: bool) -> void:
 		var fr: float = max(0.02, val.call(r) / mx)
 		row.resized.connect(func(): barc.size = Vector2(row.size.x * fr, row.size.y))
 		var h := K.hbox(4); h.set_anchors_preset(Control.PRESET_FULL_RECT); h.mouse_filter = Control.MOUSE_FILTER_IGNORE; row.add_child(h)
-		var mi = K.anim_icon(r.e.id, ic); mi.sc = 1.5; mi.mouse_filter = Control.MOUSE_FILTER_IGNORE; h.add_child(mi)   # sprite frames have empty space around the Pokémon: zoom in
+		var mi = K.anim_icon(C.sid(r.e), ic); mi.sc = 1.5; mi.mouse_filter = Control.MOUSE_FILTER_IGNORE; h.add_child(mi)   # sprite frames have empty space around the Pokémon: zoom in
 		var nm := K.lbl(("%d. " % (i + 1) if full else "") + C.SP[r.e.id].n + ("  MVP" if (full and i == 0 and tab == "dmg") else ""), 14 if full else 11, Color.WHITE, false); nm.size_flags_horizontal = Control.SIZE_EXPAND_FILL; nm.clip_text = true; h.add_child(nm)
 		h.add_child(K.lbl(txt, 14 if full else 11, Color.WHITE, false))
 		row.gui_input.connect(func(ev):
@@ -661,7 +685,7 @@ func _tap(pos: Vector2, touch: bool) -> void:
 
 class UpDots extends Control:   # upgrade level: n filled circles out of `of`, all the same size
 	var n := 0; var of := 5; var col := Color.WHITE
-	const R := 4.5; const GAP := 3.0
+	const R := 3.6; const GAP := 2.4
 	func _get_minimum_size() -> Vector2: return Vector2(of * (R * 2 + GAP) - GAP, R * 2 + 2)
 	func _draw() -> void:
 		var cy := size.y / 2

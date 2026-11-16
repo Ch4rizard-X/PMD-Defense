@@ -95,7 +95,7 @@ func item_icon(k) -> TextureRect:   # PMD Red's own icon where it has one, else 
 func icon(id: int, size := 48) -> TextureRect:
 	var t := TextureRect.new(); t.custom_minimum_size = Vector2(size, size); t.expand_mode = TextureRect.EXPAND_IGNORE_SIZE; t.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	t.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST; t.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var I: Dictionary = C.DB.micons; var n = I.i.get(id, null)
+	var I: Dictionary = C.DB.micons; var n = I.i.get(id, I.i.get(int(C.SP.get(id, {}).get("base", 0)), null))   # forms use their species' box icon
 	if n == null: return t
 	var a := AtlasTexture.new(); a.atlas = C.tex("img/ui/monicons.png")
 	a.region = Rect2((n % I.cols) * I.c, (n / I.cols) * I.c, I.c, I.c); t.texture = a
@@ -106,7 +106,7 @@ class MonIcon extends Control:
 	var id := 0; var t := 0.0; var sc := 1.0
 	func _process(dt: float) -> void: t += dt; queue_redraw()
 	func _draw() -> void:
-		var A = C.DB.anim.get(id, null)
+		var A = C.anim_of(id)
 		if A == null: return
 		var name := "Idle" if A.has("Idle") else "Walk"; var a = A[name]; var im := C.mon_tex(id)
 		if im == null: return

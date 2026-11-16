@@ -19,15 +19,29 @@ func _ready() -> void:
 	G = load_save()
 
 func load_db() -> void:
-	for k in ["dex", "anim", "ts", "fx", "snd", "tree", "icons", "wx", "mk", "micons"]:
+	for k in ["dex", "anim", "ts", "fx", "snd", "tree", "icons", "wx", "mk", "micons", "shiny", "tsx"]:
 		var f := FileAccess.open("res://data/%s.bin" % k, FileAccess.READ)
 		DB[k] = f.get_var() if f else {}
-	for m in DB.dex.mon:
+	# special maps (Ultra Wormhole, Paradox Portal) go after the normal ones: NMAPS counts only the normal maps
+	NMAPS = DB.ts.size()
+	if DB.tsx is Array: DB.ts += DB.tsx
+	# DB.dex.mon: every species + the regional forms (wild Pokémon, Pokédex); DB.dex.forms: battle forms (Megas, Primals,
+	# boss forms, fusions, Rotom / Deoxys / Shaymin forms): in C.SP for battles, but never wild or in the Pokédex
+	for m in DB.dex.mon + DB.dex.get("forms", []):
 		m["anim"] = 1 if DB.anim.has(m.id) else 0
 		var s := 0
 		for b in m.b: s += b
 		m["bst"] = s
 		SP[m.id] = m
+	# Arceus / Silvally type forms (SpriteCollab sprites 0493/0773 subgroups 1-17): the same Pokémon with another type
+	var SCT := ["Bug", "Dark", "Dragon", "Electric", "Fighting", "Fire", "Flying", "Ghost", "Grass", "Ground", "Ice", "Poison", "Psychic", "Rock", "Steel", "Water", "Fairy"]
+	for b in [493, 773]:
+		if not SP.has(b): continue
+		for k in range(1, 18):
+			var vid: int = VARIANT + int(b) * 100 + k
+			if not DB.anim.has(vid): continue
+			var m: Dictionary = SP[b].duplicate(true); m.id = vid; m.t = [TYPES.find(SCT[k - 1])]; m.n = "%s (%s)" % [SP[b].n, SCT[k - 1]]
+			m.base = b; m.form = "form"; m.anim = 1; SP[vid] = m
 
 # ---------- assets ----------
 var _tex := {}
@@ -36,7 +50,25 @@ func tex(p: String) -> Texture2D:
 	var t: Texture2D = load("res://" + p) if ResourceLoader.exists("res://" + p) else null
 	_tex[p] = t
 	return t
-func mon_tex(id: int) -> Texture2D: return tex("img/mon/%04d.webp" % id)
+# sprite ids: a species' own id, or id + SHINY for its shiny (SpriteCollab's shiny sheets, img/mon/NNNN_s.webp, each
+# with its own animation layout in data/shiny.bin). Species data (C.SP) always uses the plain id.
+const SHINY := 100000
+const VARIANT := 200000   # sprite-only variants: VARIANT + species * 100 + SpriteCollab subgroup (Deerling seasons, Arceus types...)
+func sid(e) -> int:
+	var id := int(e.id)
+	if e.get("shiny", false): return id + SHINY
+	if (id == 585 or id == 586) and season() > 0: return VARIANT + id * 100 + season()   # Deerling / Sawsbuck wear the season
+	if e.get("vform", 0): return VARIANT + id * 100 + int(e.vform)                     # a chosen look (Arceus / Silvally type)
+	return id
+func has_shiny(id: int) -> bool: return DB.get("shiny", {}).has(id)
+func anim_of(s: int):
+	if s >= VARIANT: return DB.anim.get(s, DB.anim.get((s - VARIANT) / 100, null))
+	if s >= SHINY: return DB.get("shiny", {}).get(s - SHINY, DB.anim.get(s - SHINY, null))
+	return DB.anim.get(s, null)
+func mon_tex(id: int) -> Texture2D:
+	if id >= VARIANT: return tex("img/mon/%d.webp" % id) if DB.anim.has(id) else tex("img/mon/%04d.webp" % ((id - VARIANT) / 100))
+	if id >= SHINY and has_shiny(id - SHINY): return tex("img/mon/%04d_s.webp" % (id - SHINY))
+	return tex("img/mon/%04d.webp" % (id % SHINY))
 
 # ---------- Pokémon maths (main-series formulas: IVs 0-31, nature x1.1 / x0.9 on one stat each, no EVs) ----------
 func calc_stats(id: int, lv: int, iv, nat: int) -> Array:
@@ -157,8 +189,16 @@ func evo_options(e: Dictionary) -> Array:   # evolutions this box Pokémon can t
 		var ok := false; var why := ""
 		var tr: int = v.get("tr", 0)
 		if tr == 1:
-			var need: int = v.get("lv", 0) if v.get("lv", 0) else (22 if v.get("happy", 0) else (32 if v.get("move", 0) else 30))
-			ok = e.lv >= need; why = "Lv %d" % need
+			if v.get("happy", 0) > 1:   # friendship evolution: PokeAPI's own friendship (160 / 220), time of day, known-move type
+				var fr: int = e.get("fr", 70); var tod: String = v.get("tod", ""); var mt: int = v.get("mtype", -1)
+				var known := mt < 0
+				for m in e.mv: if mt >= 0 and DB.dex.moves.has(m) and DB.dex.moves[m].t == mt: known = true
+				var tok: bool = tod == "" or (tod == "night") == bool(e.get("lastnight", false))
+				ok = fr >= v.happy and tok and known
+				why = "Friendship %d/%d%s%s" % [fr, v.happy, (", after a %s battle" % tod) if tod != "" else "", (", knowing a %s move" % TYPES[mt]) if mt >= 0 else ""]
+			else:
+				var need: int = v.get("lv", 0) if v.get("lv", 0) else (32 if v.get("move", 0) else 30)
+				ok = e.lv >= need; why = "Lv %d" % need
 		elif tr == 2: ok = e.lv >= 36; why = "Lv 36"
 		elif tr == 3:
 			var it = v.item; ok = G.items.get(it, 0) > 0; why = DB.dex.items.get(it, "item")
@@ -294,6 +334,7 @@ func load_save():
 		if not g.has(k): g[k] = {} if k != "mt" else {0: 1}
 	if not g.has("rp"): g.rp = 0
 	for e in g.box:
+		if e.has("mega_from"): e.id = e.mega_from; e.ab = e.get("ab_from", e.get("ab", 0)); e.erase("mega_from"); e.erase("ab_from")   # a battle that never finished
 		if not e.has("ab"): e.ab = roll_ability(e.id, 0.05)
 		if not e.has("it"): e.it = 0
 		if not e.get("nat", 0): e.nat = roll_nat()
@@ -303,7 +344,7 @@ func load_save():
 	return g
 func make_mon(id: int, lv: int, nat := 0, iv = null) -> Dictionary:
 	var e := {"u": G.uid, "id": id, "lv": lv, "xp": xp_for(SP[id].gr, lv), "mv": best_moves(id, lv), "pend": [], "ab": roll_ability(id, 0.05), "it": 0,
-		"nat": nat if nat else roll_nat(), "iv": iv.duplicate() if iv != null else roll_iv(), "ht": [0, 0, 0, 0, 0, 0], "mint": 0}
+		"nat": nat if nat else roll_nat(), "iv": iv.duplicate() if iv != null else roll_iv(), "ht": [0, 0, 0, 0, 0, 0], "mint": 0, "fr": 70}
 	G.uid += 1
 	G.own[id] = 1; G.seen[id] = 1
 	return e
@@ -329,6 +370,39 @@ func evolve(e: Dictionary, to: int, item: int) -> void:
 		else: e.pend.append(m)
 
 # ---------- per-map tiers: each map climbs from tier 1; clearing a map (any tier) opens the next one ----------
+# friendship (the user's choice): 70 to start (a newly caught Pokémon in the main games), up to 255; it grows with every
+# battle a Pokémon fights in (more for a win, a little for its knockouts). From 160 it lands more critical hits
+# (+5%, up to +10% at 255); friendship evolutions use the main games' own thresholds.
+func friend_crit(e: Dictionary) -> float:
+	var fr: int = e.get("fr", 70)
+	return 0.0 if fr < 160 else 0.05 + 0.05 * (fr - 160) / 95.0
+# ---- forms you choose for a team member (Moves / Evolve screen): Rotom's appliances, Deoxys, Shaymin's Sky Forme,
+# Arceus' Plates and Silvally's Memories (a type each). Kyurem fuses with a Reshiram (White) or Zekrom (Black) you own.
+func form_family(id: int) -> Array:
+	var b: int = int(SP.get(id, {}).get("base", id))
+	var fam := {479: [10008, 10009, 10010, 10011, 10012], 386: [10001, 10002, 10003], 492: [10006]}
+	var out := [b]
+	if fam.has(b): out += fam[b]
+	elif b == 493 or b == 773:
+		for k in range(1, 18): if SP.has(VARIANT + b * 100 + k): out.append(VARIANT + b * 100 + k)
+	return out.filter(func(x): return SP.has(x)) if out.size() > 1 else []
+func set_form(e: Dictionary, to: int) -> void:
+	e.ab = ability_after_evolve(e.id, to, e.ab); e.id = to; G.seen[to] = 1
+const FUSE := {643: 10023, 644: 10022}   # Reshiram -> White Kyurem, Zekrom -> Black Kyurem
+func fuse(e: Dictionary, partner: Dictionary) -> void:
+	e.fused = partner; G.box.erase(partner); set_form(e, FUSE[partner.id])
+func unfuse(e: Dictionary) -> void:
+	if not e.has("fused"): return
+	G.box.append(e.fused); e.erase("fused"); set_form(e, 646)
+# ---- Empowerment (Mega Evolution for one battle): the Mega / Primal forms SpriteCollab animates
+func megas_of(id: int) -> Array:
+	var out := []
+	for m in DB.dex.get("forms", []): if int(m.get("base", 0)) == id and m.get("form", "") == "mega" and m.anim: out.append(m.id)
+	return out
+func restore_forms() -> void:   # after a battle: Megas and night-time Land Shaymin go back to what they were
+	if G == null: return
+	for e in G.box:
+		if e.has("mega_from"): e.id = e.mega_from; e.ab = e.get("ab_from", e.ab); e.erase("mega_from"); e.erase("ab_from")
 const MAXTIER := 20
 func map_tier(i: int) -> int: return G.mt.get(i, 0)              # highest tier you can pick on map i (0 = map not open)
 func map_open(i: int) -> bool: return map_tier(i) > 0
@@ -341,10 +415,42 @@ func stars_of(i: int, t: int) -> int: return G.stars.get("%d:%d" % [i, t], 0)
 # map difficulty, like Bloons TD 6: the 96 maps in opening order, in 4 groups
 # name, colour, tiers added to every fight, reward multiplier, wild Pokémon per wave, tier to clear on any map of the group before to open this group
 const MAPGROUP := [["Beginner", "#5fd068", 0, 1.0, 1.0, 0], ["Intermediate", "#ffd84a", 4, 1.1, 1.05, 5], ["Advanced", "#ff9a3c", 13, 1.2, 1.1, 10], ["Expert", "#ff5a5a", 27, 1.35, 1.15, 15]]
-func map_group(i: int) -> int: return min(3, int(floor(i * 4.0 / DB.ts.size())))
+# ---- seasons (the user's choice): the game's own calendar, not the real one: the season moves on every 5 map wins.
+# Each favours two fitting types in the waves (2x as often; winter: Ice), and winter puts falling snow over grass maps
+# (PMD Red's hail screen, just the look: no weather effect).
+const SEASONS := [["Spring", [11, 17]], ["Summer", [6, 9]], ["Autumn", [7, 4]], ["Winter", [14]]]
+const SEASON_WINS := 5
+func season() -> int: return int(G.stats.get("wins", 0) / SEASON_WINS) % 4 if G != null else 0
+func season_left() -> int: return SEASON_WINS - int(G.stats.get("wins", 0)) % SEASON_WINS if G != null else SEASON_WINS
+var NMAPS := 0
+func map_group(i: int) -> int: return min(3, int(floor(i * 4.0 / NMAPS)))
+# ---- special maps (Expert difficulty): the Ultra Wormhole (Ultra Beasts, Necrozma / Guzzlord; Explorers of Sky's Spacial
+# Rift) opens with the Advanced maps, the Paradox Portal (paradox Pokémon, Koraidon; Deep Spacial Rift) with the Expert maps
+const SPECIAL := {"wormhole": {"group": 2, "pool": [793, 794, 795, 796, 797, 798, 803, 804, 805, 806], "boss": [800, 799],
+		"note": "A rift to Ultra Space: Ultra Beasts pour through, and Necrozma or Guzzlord waits at the end."},
+	"paradox": {"group": 3, "pool": [984, 985, 987, 988, 989, 991, 992, 994, 995, 1005, 1006, 1009, 1010], "boss": [1007],
+		"note": "A portal to Area Zero: paradox Pokémon from the past and the future, and Koraidon at the end."}}
+func special_of(i: int) -> String: return str(DB.ts[i].get("special", "")) if i >= 0 and i < DB.ts.size() else ""
+func check_specials() -> String:   # opens special maps whose gate is met; returns the name of one just opened
+	var got := ""
+	for i in range(NMAPS, DB.ts.size()):
+		var sp: Dictionary = SPECIAL.get(special_of(i), {})
+		if sp.size() and not map_open(i) and map_open(group_start(sp.group)): G.mt[i] = 1; got = DB.ts[i].name
+	return got
+# ---- legendary maps: the dungeons where the PMD games have you meet a legendary. After clearing tier 5 on one, its
+# Legendary challenge sends that legendary as the boss every time (stronger, and likelier to join)
+const LEGEND_HOME := {"Mt Thunder": [145], "Mt Thunder Peak": [145], "Mt Blaze": [146], "Mt Freeze": [144], "Magma Cavern": [383],
+	"Sky Tower": [384], "Silver Trench": [249], "Meteor Cave": [386], "Fiery Field": [244], "Lightning Field": [243],
+	"Northwind Field": [245], "Mt Faraway": [250], "Western Cave": [150], "Wish Cave": [385], "Buried Relic": [377, 378, 379],
+	"Temporal Tower": [483], "Giant Volcano": [485], "Dark Crater": [491]}
+func legends_of(i: int) -> Array:
+	if i >= NMAPS: return []
+	var nm: String = DB.ts[i].name
+	var b := nm.get_slice(" 1", 0).get_slice(" 2", 0).get_slice(" 3", 0).get_slice(" 4", 0).get_slice(" 5", 0).get_slice(" 6", 0).get_slice(" 7", 0).get_slice(" 8", 0).get_slice(" 9", 0)
+	return LEGEND_HOME.get(b, LEGEND_HOME.get(nm, [])).filter(func(x): return SP.has(x) and SP[x].anim)
 # how hard a fight is, on the old one-group tier scale (one long climb over all 4 groups)
 func threat_tier(i: int, t: float) -> float: return 1 + (t + MAPGROUP[map_group(i)][2] - 1) * 2.05 / 4.2
 func group_start(g: int) -> int:
-	for i in DB.ts.size(): if map_group(i) == g: return i
+	for i in NMAPS: if map_group(i) == g: return i
 	return -1
 func group_gate(g: int) -> int: return MAPGROUP[g][5]

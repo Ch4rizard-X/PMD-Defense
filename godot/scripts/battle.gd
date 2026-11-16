@@ -81,6 +81,14 @@ func spawn_info(set_idx: int, tier0: int) -> Dictionary:
 		for x in m.t: if S.types.has(x): return true
 		return false
 	var pool := []
+	var SPC: Dictionary = C.SPECIAL.get(C.special_of(set_idx), {})
+	if SPC.size():   # special maps: their own Pokémon only
+		for id in SPC.pool: if C.SP.has(id) and C.SP[id].anim: pool.append(C.SP[id])
+		var bs := []
+		for id in SPC.boss: if C.SP.has(id) and C.SP[id].anim: bs.append(C.SP[id])
+		var rr := {}
+		for m in pool + bs: rr[m.id] = rar_of(m)
+		return {"tier": tier, "minB": minB, "maxB": maxB, "pool": pool, "heavy": stable_sort(pool, func(m): return -(m.b[0] + m.b[2])).slice(0, 6), "bosses": bs, "legs": [], "rar": rr}
 	for m in C.DB.dex.mon:
 		if m.anim and not m.get("lg", 0) and hasTy.call(m) and m.bst <= maxB and m.bst >= minB and (tier >= 3 or m.cr > 45): pool.append(m)
 	if pool.size() < 8:
@@ -96,14 +104,15 @@ func spawn_info(set_idx: int, tier0: int) -> Dictionary:
 	var rar := {}
 	for m in pool: rar[m.id] = rar_of(m)
 	return {"tier": tier, "minB": minB, "maxB": maxB, "pool": pool, "heavy": heavy, "bosses": bosses, "legs": legs, "rar": rar}
-func waves_for(set_idx: int, tier0: int, R) -> Array:
+var legend_boss := []   # set by the HUD before start_battle: the Legendary challenge's legendary (or none)
+func waves_for(set_idx: int, tier0: int, R, night := false) -> Array:
 	var SI := spawn_info(set_idx, tier0); var tier: float = SI.tier; var W := wave_count(tier0)
 	var G4: Array = C.MAPGROUP[C.map_group(set_idx)]; var maxB: float = SI.maxB; var minB: float = SI.minB; var pool: Array = SI.pool
 	var lr := lv_range(tier); var base: int = min(98, lr[0]); var top: int = min(100, lr[1])
 	var pickW := func(target: float) -> Dictionary:
 		var w := []; var tot := 0.0
 		for m in pool:
-			var v := rar_weight(m) / (1 + absf(m.bst - target) / 40.0); w.append(v); tot += v
+			var v := rar_weight(m) / (1 + absf(m.bst - target) / 40.0) * (3.0 if (night and is_night_mon(m.id)) else 1.0) * (2.0 if _season_fav(m) else 1.0); w.append(v); tot += v
 		var r: float = R.next() * tot; var k := 0
 		r -= w[k]
 		while r > 0 and k < w.size() - 1: k += 1; r -= w[k]
@@ -117,10 +126,11 @@ func waves_for(set_idx: int, tier0: int, R) -> Array:
 			if tier >= 5:
 				var leg: Array = SI.legs
 				if leg.size() and R.next() < 0.5 + mod("legend"): boss = leg[int(floor(R.next() * leg.size()))]
-			if boss == null: boss = SI.bosses[int(floor(R.next() * min(3, pool.size())))]
+			if boss == null: boss = SI.bosses[int(floor(R.next() * min(min(3, pool.size()), SI.bosses.size())))]
+			if legend_boss.size(): boss = C.SP[legend_boss[int(floor(R.next() * legend_boss.size()))]]   # Legendary challenge
 			var n := int(round((6 + tier) * G4[4]))
 			for i in n: list.append({"id": pickW.call(target).id, "lv": lv, "gap": 0.6})
-			list.append({"id": boss.id, "lv": min(100, top + 3), "gap": 2.5, "boss": 1})
+			list.append({"id": boss.id, "lv": min(100, top + (8 if legend_boss.size() else 3)), "gap": 2.5, "boss": 1})
 		elif w % 5 == 0:   # heavy wave: few strong ones
 			var n := int(round((3 + tier * 0.4 + w * 0.15) * G4[4]))
 			var heavy: Array = SI.heavy
@@ -132,14 +142,51 @@ func waves_for(set_idx: int, tier0: int, R) -> Array:
 			var gap := clampf(1.05 - w * 0.025, 0.4, 1.05) / sqrt(G4[4])
 			for i in n: list.append({"id": kinds[i % kinds.size()].id, "lv": max(1, lv - (1 if R.next() < 0.3 else 0)), "gap": gap})
 		waves.append(list)
+	# rival rescue teams (the PMD games' own rivals): on some maps one races through a wave, faster and tougher than the
+	# wild ones; knock out all three for a reward, each one that gets through costs 5 lives
+	if tier0 >= 2 and W >= 8 and R.next() < 0.3:
+		var team: Array = RIVALS[int(floor(R.next() * RIVALS.size()))]
+		var cand := []
+		for w in range(3, W): if w % 5 != 0: cand.append(w)
+		var w: int = cand[int(floor(R.next() * cand.size()))]
+		var lv: int = min(100, int(round(base + (top - base) * pow(w / float(W), 1.3))) + 3)
+		var at: int = int(waves[w - 1].size() / 2)
+		for i in team[1].size():
+			if C.SP.has(team[1][i]) and SP(team[1][i]).anim: waves[w - 1].insert(at + i, {"id": team[1][i], "lv": lv, "gap": 0.5, "rival": team[0]})
 	return waves
+const RIVALS := [["Team Meanies", [94, 23, 308]], ["Team ACT", [65, 6, 248]], ["Team Skull", [435, 41, 109]], ["Team Charm", [428, 282, 308]]]
 
 # ---------- start ----------
-func start_battle(set_idx: int, tier: int, seed: int, team: Array, portrait: bool, aspect: float) -> void:
+# ---- night (the user's choice): Ghost and Dark Pokémon deal 20% more (wild ones, which never attack, get 20% more HP),
+# and night Pokémon turn up 3x as often: the species the main games only or mostly let you find at night (PokeAPI
+# encounter data: night encounters at least twice their morning / day ones, in the games with time of day: GSC, DPPt,
+# HGSS) plus all Ghost and Dark types. Day and night share the map's tiers and stars.
+const NIGHT_SPECIES := [43, 44, 48, 49, 60, 92, 96, 97, 120, 163, 164, 167, 168, 183, 194, 198, 200, 202, 215, 228, 332, 354, 355, 356, 361, 364, 402, 419, 422, 423, 479]
+func _season_fav(m: Dictionary) -> bool:   # the season's favoured types (C.SEASONS)
+	for x in C.SEASONS[C.season()][1]: if m.t.has(x): return true
+	return false
+const SHINY_RATE := 1.0 / 400.0; const ALPHA_RATE := 1.0 / 200.0
+# ---- Empowerment Seed: once per battle. A Pokémon with an animated Mega / Primal form Mega Evolves for the rest of the
+# battle (that form's stats, types and ability); any other is Awakened: 30% more damage and attack speed.
+func empower(t: Dictionary, mega := 0) -> void:
+	if B.get("empowered", false): return
+	B.empowered = true
+	if mega and C.SP.has(mega):
+		t.e.mega_from = t.e.id; t.e.ab_from = t.e.ab
+		var ml: Array = C.SP[mega].get("ab", []); t.e.ab = ml[0][0] if ml.size() else t.e.ab
+		t.e.id = mega
+	else: t.awk = true
+	add_fx("eos000/anim01", t.x, t.y, 0); t.anim = "Shoot"; t.at = 0.0
+	if has_node("/root/Snd"): get_node("/root/Snd").sfx("evo")
+func is_night_mon(id: int) -> bool: return NIGHT_SPECIES.has(id) or SP(id).t.has(7) or SP(id).t.has(16)
+func start_battle(set_idx: int, tier: int, seed: int, team: Array, portrait: bool, aspect: float, night := false) -> void:
+	C.restore_forms()
+	if night:   # Shaymin's Sky Forme needs daylight: at night it fights in its Land Forme
+		for e in team: if e.id == 10006: e.mega_from = e.id; e.ab_from = e.ab; e.ab = C.ability_after_evolve(e.id, 492, e.ab); e.id = 492
 	var R = MG.Rng.new(seed ^ 0x5bd1e995)
 	var M := MG.gen_map(set_idx, portrait, seed, null, aspect, tier)
 	var th: float = C.threat_tier(set_idx, tier)
-	B = {"M": M, "set": set_idx, "tier": tier, "th": th, "seed": seed, "team": team, "portrait": portrait, "aspect": aspect, "waves": waves_for(set_idx, tier, R), "wave": 0, "phase": "build",
+	B = {"M": M, "set": set_idx, "tier": tier, "th": th, "seed": seed, "team": team, "portrait": portrait, "aspect": aspect, "waves": waves_for(set_idx, tier, R, night), "night": night, "legend": legend_boss.size() > 0, "season": C.season(), "snowlook": C.season() == 3 and land_kind(set_idx) == "grass", "wave": 0, "phase": "build",
 		"lives": 100, "cash": int(round(220 + th * 60 + mod("startCash"))), "weather": null, "towers": [], "en": [], "proj": [], "fx": [], "fl": [], "q": [], "qt": 0.0, "time": 0.0,
 		"speed": 1, "sel": null, "placing": null, "ghost": null, "auto": false, "recruits": [], "asks": [], "declined": {}, "xpLog": {}, "kills": 0, "over": false, "paused": false,
 		"q2": [], "traps": [], "decoys": [], "zap": [], "terr": {}, "meter": {}, "bwx": null, "pwx": null, "mwx": null, "mlab": "", "msrc": null, "chain": 0}
@@ -159,9 +206,10 @@ func start_wave() -> void:
 func spawn(s: Dictionary, d := 0.0) -> Dictionary:
 	var nat: int = C.roll_nat(); var iv: Array = C.roll_iv(); var sp := SP(s.id); var st: Array = C.calc_stats(s.id, s.lv, iv, nat)
 	var hpm: int = (3 if sp.get("lg", 0) else 4) if s.get("boss", 0) else 1
+	var nhp: float = 1.2 if (B.get("night", false) and (sp.t.has(7) or sp.t.has(16))) else 1.0   # night: wild Ghost / Dark are tougher
 	var ab: int = C.roll_ability(s.id, 0.05 + mod("hidden")); var ak: String = C.ab_key(ab)
 	_eid += 1
-	var en := {"eid": _eid, "id": s.id, "lv": s.lv, "st": st, "nat": nat, "iv": iv, "hp": st[0] * hpm, "max": st[0] * hpm, "d": d, "x": 0.0, "y": 0.0, "dir": 2, "boss": bool(s.get("boss", 0)),
+	var en := {"eid": _eid, "id": s.id, "lv": s.lv, "st": st, "nat": nat, "iv": iv, "hp": int(st[0] * hpm * nhp), "max": int(st[0] * hpm * nhp), "d": d, "x": 0.0, "y": 0.0, "dir": 2, "boss": bool(s.get("boss", 0)),
 		"spd": (30 + sp.b[5] * 0.4), "sts": null, "stt": 0.0, "imm": 0.0, "dots": [], "stg": {3: 0, 5: 0, 6: 0}, "stgt": 0.0, "stop": 0.0, "at": rnd() * 2, "hurt": 0.0,
 		"lives": 20 if s.get("boss", 0) else 1 + stages_below(s.id), "ab": ab, "ak": ak, "sbt": 0.0,
 		"lane": (rnd() * 2 - 1) * 11, "ph": rnd() * 6.3, "sw": 0.5 + rnd() * 0.6, "pace": 0.88 + rnd() * 0.24,
@@ -185,11 +233,37 @@ func spawn(s: Dictionary, d := 0.0) -> Dictionary:
 		en.bt = {"wx": 1.0, "up": 4.0, "call": 8.0}
 	if s.get("boss", 0) and C.DB.snd.has("bossTheme") and C.DB.snd.bossTheme.has(s.id): music(C.DB.snd.bossTheme[s.id])   # this boss has its own song in the ROMs
 	if s.get("minion", 0): en.lives = 1
+	if s.has("rival"):
+		en.rival = s.rival; en.hp *= 2; en.max *= 2; en.pace = 1.25; en.lives = 5
+		var rv: Dictionary = B.get("rival", {})
+		if rv.get("n", "") != s.rival: rv = {"n": s.rival, "left": 0, "got": 0}; B.rival = rv; floater(en, "%s is racing you!" % s.rival, 4); sfx("evo")
+		rv.left += 1
+	# shiny (1 in 400, when SpriteCollab has its shiny) and Alpha (1 in 200: 1.5x size, 3x HP, perfect IVs); never bosses
+	if not s.get("boss", 0) and not s.get("mid", 0):
+		if C.has_shiny(s.id) and rnd() < SHINY_RATE: en.shiny = true; en.spk = true
+		if rnd() < ALPHA_RATE: en.alpha = true; en.hp *= 3; en.max *= 3; en.iv = [31, 31, 31, 31, 31, 31]
 	B.en.append(en); G().seen[s.id] = 1
 	return en
+# boss transformations: below half HP these bosses take their stronger form (SpriteCollab animates all of them)
+const BOSS_FORM := {382: 10077, 383: 10078, 487: 10007, 483: 10245, 484: 10246, 718: 10120, 800: 10157, 888: 10188, 889: 10189, 720: 10086}
+func boss_transform(e: Dictionary) -> void:
+	var to: int = BOSS_FORM[e.id]
+	if not C.SP.has(to): return
+	var nm: String = SP(e.id).n
+	e.tf = true; e.id = to
+	var st: Array = C.calc_stats(to, e.lv, e.iv, e.nat)
+	var mul: float = float(e.max) / max(1.0, e.st[0])
+	e.st = st; e.max = int(st[0] * mul); e.hp = int(e.max * 0.5); e.spd = 30 + SP(to).b[5] * 0.4
+	var al: Array = SP(to).get("ab", [])
+	if al.size(): e.ab = al[0][0]; e.ak = C.ab_key(e.ab)
+	if to == 10077 or to == 10078:   # Primal Reversion brings its own weather
+		e.bwxm = 240 if to == 10077 else 241; e.bwx = WX_MOVES[e.bwxm]; B.bwx = {"k": e.bwx, "e": e}; sync_weather()
+	add_fx("eos000/anim01", e.x, e.y, 0); floater(e, "%s became %s!" % [nm, SP(to).n], 4)
+	if has_node("/root/Snd"): get_node("/root/Snd").sfx("evo")
 func boss_act(e: Dictionary, dt: float) -> void:
 	var T: Dictionary = e.bt
 	for k in T: T[k] -= dt
+	if not e.get("tf", false) and BOSS_FORM.has(e.id) and e.hp < e.max * 0.5: boss_transform(e)
 	if e.bwx and B.bwx == null: B.bwx = {"k": e.bwx, "e": e}; floater(e, mvd(e.bwxm).n, 4)   # a boss's weather lasts until it is knocked out
 	if e.bup.size() and T.up <= 0:
 		var mist := false
@@ -294,7 +368,30 @@ func sell_tower(t: Dictionary) -> void:
 	B.cash += int(floor(t.paid * 0.7))
 	B.towers = B.towers.filter(func(x): return not is_same(x, t))
 	if B.sel != null and is_same(B.sel, t): B.sel = null
-func tower_range(t: Dictionary, m: int) -> float: return RANGE[mvd(m).c] * (1 + min(0.25, t.e.lv / 400.0) + mod("range")) * up_k(t, 0) * (1.15 if has_t(t, 2) else 1.0)   # Flying: Far sight
+func tower_range(t: Dictionary, m: int) -> float: return RANGE[mvd(m).c] * (1 + min(0.25, t.e.lv / 400.0) + mod("range")) * up_k(t, 0) * (1.15 if has_t(t, 2) else 1.0) * (1.2 if terrain_perk(t) == "rock" else 1.0)   # Flying: Far sight; rocky land: Rock / Ground / Fighting reach further
+# ---- terrain (the user's choice): the map's land counts as one terrain from its setting's own type list (the first of
+# Grass / Rock-Ground / Ice it lists), plus ponds and lava. Only Pokémon of the matching type get the perk:
+#   pond: Water attacks 20% faster   lava: Fire +20% damage   grass land: Grass +20% damage
+#   rocky land: Rock / Ground / Fighting +20% range           icy land: Ice attacks 20% faster
+const TERRAIN_TXT := {"pond": "Pond: attacks 20% faster", "lava": "Lava: 20% more damage", "grass": "Grassland: 20% more damage",
+	"rock": "Rocky ground: 20% more range", "ice": "Icy ground: attacks 20% faster"}
+func land_kind(set_idx: int) -> String:
+	for x in C.DB.ts[set_idx].get("types", []):
+		if x == 11: return "grass"
+		if x == 4 or x == 5: return "rock"
+		if x == 14: return "ice"
+	return ""
+func terrain_perk_at(id: int, x: float, y: float) -> String:
+	var ty: Array = SP(id).t; var M: Dictionary = B.M
+	var tile: int = M.t[clampi(int(y / TZ), 0, M.H - 1)][clampi(int(x / TZ), 0, M.W - 1)]
+	if tile == 2: return "pond" if (M.liq == "water" and ty.has(10)) else ("lava" if (M.liq == "lava" and ty.has(9)) else "")
+	if not B.has("land"): B.land = land_kind(B.set)
+	match B.land:
+		"grass": return "grass" if ty.has(11) else ""
+		"rock": return "rock" if (ty.has(5) or ty.has(4) or ty.has(1)) else ""
+		"ice": return "ice" if ty.has(14) else ""
+	return ""
+func terrain_perk(t: Dictionary) -> String: return terrain_perk_at(t.e.id, t.x, t.y)
 func in_range(t: Dictionary, r: float) -> Array:
 	var out := []
 	for e in B.en: if e.hp > 0 and e.d > 0 and hyp(e.x, e.y, t.x, t.y) <= r: out.append(e)
@@ -376,6 +473,9 @@ func fire(t: Dictionary, b: Dictionary, st: Array) -> void:
 	cd /= 1 + mod("atkSpeed") + tsm
 	var tile: int = B.M.t[int(t.y / TZ)][int(t.x / TZ)]
 	if tile == 2 and ((B.M.liq == "water" and ty.has(10)) or (B.M.liq == "lava" and ty.has(9))): cd /= 1 + mod("pondSpeed")
+	var tperk := terrain_perk(t)
+	if tperk == "pond" or tperk == "ice": cd /= 1.2   # terrain
+	if t.get("awk", false): cd /= 1.3   # Awakened
 	if (ak == "chlorophyll" and w == "sun") or (ak == "sand-rush" and w == "sand") or (ak == "slush-rush" and w == "hail") or (ak == "swift-swim" and w == "rain"): cd /= 1.5
 	if ak == "speed-boost": cd /= 1 + min(0.5, t.get("sbt", 0.0) / 60.0)
 	if ak == "swift-swim" and tile == 2: cd /= 1.5
@@ -444,7 +544,7 @@ func apply_move(t: Dictionary, m: int, e: Dictionary, st: Array) -> void:
 			var sure: bool = t.get("lf", 0) and ek != "battle-armor" and ek != "shell-armor"
 			if sure: t.lf = 0   # Laser Focus
 			var crit := 1.0
-			if sure or (ek != "battle-armor" and ek != "shell-armor" and rnd() < [1 / 24.0, 1 / 8.0, 1 / 2.0, 1.0][cs] + mod("crit")): crit = 2.25 if ak == "sniper" else 1.5
+			if sure or (ek != "battle-armor" and ek != "shell-armor" and rnd() < [1 / 24.0, 1 / 8.0, 1 / 2.0, 1.0][cs] + mod("crit") + C.friend_crit(t.e)): crit = 2.25 if ak == "sniper" else 1.5
 			var pw: float = M.p if M.get("p", 0) else 60
 			if ak == "technician" and pw <= 60: pw *= 1.5
 			var stabv: float = (2.0 if ak == "adaptability" else 1.5)
@@ -452,6 +552,10 @@ func apply_move(t: Dictionary, m: int, e: Dictionary, st: Array) -> void:
 			var mlt: float = (stabv if me.t.has(M.t) else 1.0) * ef * crit
 			mlt *= 1 + C.mods().get("power", 0.0) + C.mods().get("tp%d" % M.t, 0.0)
 			mlt *= up_k(t, 2)   # Power upgrades
+			var tpk := terrain_perk(t)
+			if tpk == "grass" or tpk == "lava": mlt *= 1.2   # terrain
+			if B.get("night", false) and (has_t(t, 7) or has_t(t, 16)): mlt *= 1.2   # night: Ghost / Dark
+			if t.get("awk", false): mlt *= 1.3   # Awakened
 			if M.t == 12 and t.get("chg", 0): mlt *= 2; t.chg = 0
 			if M.t == 12 and e.get("elz", 0.0) > B.time: mlt *= 2   # Charge / Electrify
 			if t.get("dt", 0.0) > B.time: mlt *= 2
@@ -555,7 +659,11 @@ func ko(t, e: Dictionary) -> void:
 	e.hp = 0; e.dead = 0.5; B.kills += 1
 	var mt = mtr(t)
 	if mt: mt.ko += 1
-	B.cash += int(round((2 + floor(e.lv / 6.0) + (50 if e.boss else 0)) * (2 if (t != null and C.held_key(t.e) == "amulet-coin") else 1) * (1 + mod("koCash"))))
+	if e.has("rival") and B.has("rival"):
+		B.rival.got += 1; B.rival.left -= 1
+		if B.rival.left <= 0 and B.rival.got >= 3 and not B.rival.get("paid", false):
+			B.rival.paid = true; var pay := int(100 + B.th * 40); B.cash += pay; floater(e, "%s beaten! +$%d" % [e.rival, pay], 4)
+	B.cash += int(round((2 + floor(e.lv / 6.0) + (50 if e.boss else 0) + (25 if e.get("alpha", false) else 0)) * (2 if (t != null and C.held_key(t.e) == "amulet-coin") else 1) * (1 + mod("koCash"))))
 	if t != null:
 		var sp := SP(e.id)
 		for o in B.towers:
@@ -570,9 +678,10 @@ func ko(t, e: Dictionary) -> void:
 		# duplicates allowed; a declined species stops asking for the rest of this battle
 		var asked := false
 		for a in B.asks: if a.id == e.id: asked = true
-		if sp.anim and not B.declined.has(e.id) and not asked:
-			var p: float = (0.04 + mod("bossRecruit") if e.boss else 0.005 * (sp.cr / 255.0) * (1 + B.th * 0.05) * (1 - 0.5 * clampf((B.th - 4) / 5.0, 0, 1))) * (1 + mod("recruit")) * (3.0 if e.get("fs", false) else 1.0) * (2.0 if e.get("lure", 0.0) > B.time else 1.0)
-			if rnd() < p: B.asks.append({"id": e.id, "lv": e.lv, "ab": e.ab, "nat": e.nat, "iv": e.iv}); sfx("join"); ask_join.emit()
+		if sp.anim and not B.declined.has(e.id) and not asked and not e.has("rival"):
+			var p: float = ((0.25 if B.get("legend", false) else 0.04) + mod("bossRecruit") if e.boss else 0.005 * (sp.cr / 255.0) * (1 + B.th * 0.05) * (1 - 0.5 * clampf((B.th - 4) / 5.0, 0, 1))) * (1 + mod("recruit")) * (3.0 if e.get("fs", false) else 1.0) * (2.0 if e.get("lure", 0.0) > B.time else 1.0)
+			p *= 3.0 if e.get("alpha", false) else 1.0   # Alpha: likelier to join (a shiny joins as often as any other)
+			if rnd() < p: B.asks.append({"id": e.id, "lv": e.lv, "ab": e.ab, "nat": e.nat, "iv": e.iv, "shiny": e.get("shiny", false), "alpha": e.get("alpha", false)}); sfx("join"); ask_join.emit()
 	# evolved Pokémon fall back to their earlier stage (they keep coming)
 	var s := SP(e.id)
 	if not e.boss and s.get("f", 0) and C.SP.has(s.f) and SP(s.f).anim and not SP(s.f).get("bb", 0):
@@ -603,6 +712,10 @@ func live_tower(t):   # the tower if it is still placed, else null (damage over 
 func tick(dt: float) -> void:
 	if B == null or B.phase == "win" or B.phase == "lose" or B.paused: return
 	dt *= B.speed; B.time += dt
+	for e in B.en:   # a shiny's sparkle as it comes onto the map: the glow effect from the ROM and Moonlight's sound
+		if e.get("spk", false) and e.d > 6:
+			e.spk = false; add_fx("eos000/anim01", e.x, e.y, 0)
+			if has_node("/root/Snd"): get_node("/root/Snd").move_sfx(236)
 	if B.phase == "wave":
 		if B.q.size():
 			B.qt -= dt
@@ -765,6 +878,10 @@ func anim_len(id: int, name: String) -> float:
 	return fx_len(A)
 func finish(won: bool) -> void:
 	B.phase = "win" if won else "lose"; B.over = true
+	C.restore_forms()
+	for tw in B.towers:   # friendship grows with every battle fought together (more for a win, a little for knockouts)
+		tw.e.fr = mini(255, int(tw.e.get("fr", 70)) + (6 if won else 2) + mini(4, int(tw.kills / 25)))
+		tw.e.lastnight = bool(B.get("night", false))
 	var gm: Array = C.MAPGROUP[C.map_group(B.set)]
 	var reward := int(round((100 + B.th * 80 + B.lives * 2 if won else floor(B.wave * B.th * 6)) * (1 + (mod("pay") + mod("bossPay") if won else 0.0)) * gm[3]))   # harder maps pay more
 	B.reward = reward; G().money += reward; G().stats.maps = G().stats.get("maps", 0) + 1
@@ -784,7 +901,9 @@ func finish(won: bool) -> void:
 			if not G().has("mtDone"): G().mtDone = {}
 			G().mtDone[B.set] = 1
 		var g: int = C.map_group(B.set); var nx: int = B.set + 1
-		if nx < C.DB.ts.size() and C.map_group(nx) == g and not C.map_open(nx): G().mt[nx] = 1; B.mapOpened = C.DB.ts[nx].name
+		if nx < C.NMAPS and C.map_group(nx) == g and not C.map_open(nx): G().mt[nx] = 1; B.mapOpened = C.DB.ts[nx].name
+		var spo := C.check_specials()
+		if spo != "": B.mapOpened = spo
 		if g < 3 and B.tier >= C.group_gate(g + 1):
 			var f: int = C.group_start(g + 1)
 			if f >= 0 and not C.map_open(f):
