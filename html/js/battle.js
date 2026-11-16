@@ -92,6 +92,12 @@ function reworkHeavy(waves, setIdx, tier0, seed) {
     const st = K > 1 ? Math.max(0, Math.round(k * (byB.length - 3) / (K - 1))) : 0, picks = byB.slice(st, st + 3);   // a window of 3 that walks from the weakest to the strongest
     const n = Math.round((3 + tier * 0.4 + w * 0.3) * G4[4]), list = [];
     for (let i = 0; i < n; i++) list.push({ id: picks[Math.floor(R() * picks.length)].id, lv: Math.min(100, lv + 2), gap: 1.6 });
+    if (w % 10 === 0) {   // midboss wave: one of the map's strongest species (not the final boss) walks in the middle of the group
+      const fbE = waves[W - 1].find(x => x.boss), fb = fbE ? fbE.id : null;
+      let cand = SI.bosses.filter(m => m.id !== fb); if (!cand.length) cand = SI.bosses.slice();
+      const mb = cand[Math.floor(R() * cand.length)];
+      list.splice(Math.floor(n / 2), 0, { id: mb.id, lv: Math.min(100, lv + 3), gap: 1.6, mid: 1 });
+    }
     waves[w - 1] = list;
   }
   return waves;
@@ -140,6 +146,10 @@ function spawn(s, d) {
   }
   if (s.boss && DB.snd.bossTheme && DB.snd.bossTheme[s.id]) playMusic(DB.snd.bossTheme[s.id]);   // this boss has its own song in the ROMs
   if (s.minion) en.lives = 1;                                 // Steel / Rock shrug off weak hits
+  // heavy waves (every 5th): every wild Pokémon has double HP. Midboss (every 10th): double HP, boss HP bar, boss
+  // resistances and rewards, 10 lives if it gets through (the final boss: 20), and the boss song while it's out. Same as Godot (hud.gd).
+  if (B.wave % 5 === 0 && B.wave !== B.waves.length) { en.hp *= 2; en.max *= 2; }
+  if (s.mid) { en.mid = true; en.boss = true; en.lives = 10; playMusic((DB.ts[B.set].game === 'E' ? '_e' : '_') + 'boss'); }
   B.en.push(en); G.seen[s.id] = 1;
   return en;
 }
@@ -446,8 +456,14 @@ function addFx(ref, x, y, dir, ang) { const a = DB.fx.anims[ref]; if (a) B.fx.pu
 function dirRow(dx, dy) { const deg = Math.atan2(dy, dx) * 180 / Math.PI; return ((Math.round((90 - deg) / 45) % 8) + 8) % 8; }
 
 /* ---------- update ---------- */
+function midMusic() {   // midboss gone (knocked out or got through): back to the heavy-wave song
+  const out = B.phase === 'wave' && B.en.some(e => e.mid && e.hp > 0 && e.d > 0);
+  if (B.midWas && !out && DB.snd.music._heavy) playMusic('_heavy');
+  B.midWas = out;
+}
 function tick(dt) {
   if (!B || B.phase === 'win' || B.phase === 'lose' || B.paused) return;
+  midMusic();
   dt *= B.speed; B.time += dt;
   if (B.phase === 'wave') {
     if (B.q.length) { B.qt -= dt; while (B.q.length && B.qt <= 0) { const s = B.q.shift(); spawn(s); B.qt += s.gap; } }
