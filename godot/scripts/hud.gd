@@ -99,6 +99,30 @@ func build_team() -> void:
 		c.gui_input.connect(func(ev): _row_input(ev, e))
 		teamrow.add_child(c); tcards[e.u] = {"c": c, "tl": tl, "ic": ic, "id": e.id, "e": e}
 	refresh_hud(); layout.call_deferred()
+# heavy waves (every 5th): every wild Pokémon has double HP. Midboss waves (every 10th): the midboss (the wave's one
+# entry marked "mid", 3 levels above the rest) gets double HP, the boss HP bar, boss resistances and rewards, costs 10
+# lives if it gets through (the final boss: 20), and plays the boss song while it's out.
+# battle.gd can't be patched, so new arrivals are powered up here the frame they appear.
+var _hv_seen := 0
+func _heavy_hook() -> void:
+	if B.phase != "wave": return
+	var heavy: bool = B.wave % 5 == 0 and B.wave != B.waves.size()
+	var mid = null
+	if heavy:
+		for x in B.waves[B.wave - 1]: if x.get("mid", 0): mid = x
+	var mid_out := false
+	for e in B.en:
+		if e.eid > _hv_seen:
+			_hv_seen = max(_hv_seen, e.eid)
+			if heavy:
+				e.hp *= 2; e.max *= 2
+				if mid != null and e.id == mid.id and e.lv == mid.lv and not e.get("mid", false):
+					e.mid = true; e.boss = true; e.lives = 10
+					Snd.play_music(("_e" if C.DB.ts[B.set].game == "E" else "_") + "boss")
+		if e.get("mid", false) and e.hp > 0 and e.d > 0: mid_out = true
+	if _mid_was and not mid_out and C.DB.snd.music.has("_heavy"): Snd.play_music("_heavy")   # midboss gone: back to the heavy-wave song
+	_mid_was = mid_out
+var _mid_was := false
 # the level-up sound plays one at a time: while it's still playing, new ones (fast upgrades, several level-ups at once)
 # are skipped. snd.gd can't be patched, so its 'last played' time for that sound is kept current while it plays.
 var _lvl_path := ""
@@ -243,7 +267,7 @@ func _place_tinfo() -> void:
 	tinfo.position = Vector2((vs.x - tinfo.size.x) / 2, _team_top - tinfo.size.y - 6)
 func _process(dt: float) -> void:
 	if B == null: return
-	_row_glide(dt); _hold_lvl_sfx()
+	_row_glide(dt); _hold_lvl_sfx(); _heavy_hook()
 	BT.tick(min(0.05, dt))
 	if B.asks.size() and K.modal == null: ask_join()
 	_hud_t -= dt

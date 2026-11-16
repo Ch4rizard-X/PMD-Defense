@@ -901,4 +901,12 @@ func rework_heavy(set_idx: int, tier0: int, seed: int) -> void:
 		var n := int(floor((3 + tier * 0.4 + w * 0.3) * G4[4] + 0.5))
 		var list := []
 		for i in n: list.append({"id": picks[int(floor(R.next() * picks.size()))].id, "lv": min(100, lv + 2), "gap": 1.6})
+		if w % 10 == 0:   # midboss wave: one of the map's strongest species (not the final boss) walks in the middle of the group
+			var fb = null
+			for x in B.waves[W - 1]: if x.get("boss", 0): fb = x.id
+			var cand := []
+			for m in SI.bosses: if m.id != fb: cand.append(m)
+			if cand.is_empty(): cand = SI.bosses.duplicate()
+			var mb = cand[int(floor(R.next() * cand.size()))]
+			list.insert(n / 2, {"id": mb.id, "lv": min(100, lv + 3), "gap": 1.6, "mid": 1})
 		B.waves[w - 1] = list
