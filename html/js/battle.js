@@ -121,7 +121,8 @@ function startWave() {
   if (!B || B.phase !== 'build' || B.wave >= B.waves.length) return;
   B.q = B.waves[B.wave].map(x => Object.assign({}, x)); B.qt = 0.4; B.wave++; B.phase = 'wave';
   if (typeof waveBanner === 'function') waveBanner();
-  if (B.wave % 5 === 0 && B.wave !== B.waves.length && DB.snd.music._heavy) playMusic('_heavy');   // heavy waves: Monster House
+  if (B.wave % 10 === 0 && B.wave !== B.waves.length) playMusic((DB.ts[B.set].game === 'E' ? '_e' : '_') + 'boss');   // midboss waves: the boss song all wave
+  else if (B.wave % 5 === 0 && B.wave !== B.waves.length && DB.snd.music._heavy) playMusic('_heavy');   // heavy waves: Monster House
   if (B.wave === B.waves.length) playMusic((DB.ts[B.set].game === 'E' ? '_e' : '_') + (B.waves[B.wave - 1].some(x => x.boss && SP[x.id].lg) ? 'legend' : 'boss'));
 }
 function spawn(s, d) {
@@ -147,9 +148,9 @@ function spawn(s, d) {
   if (s.boss && DB.snd.bossTheme && DB.snd.bossTheme[s.id]) playMusic(DB.snd.bossTheme[s.id]);   // this boss has its own song in the ROMs
   if (s.minion) en.lives = 1;                                 // Steel / Rock shrug off weak hits
   // heavy waves (every 5th): every wild Pokémon has double HP. Midboss (every 10th): double HP, boss HP bar, boss
-  // resistances and rewards, 10 lives if it gets through (the final boss: 20), and the boss song while it's out. Same as Godot (hud.gd).
+  // resistances and rewards, 10 lives if it gets through (the final boss: 20); the whole midboss wave plays the boss song (startWave). Same as Godot (hud.gd).
   if (B.wave % 5 === 0 && B.wave !== B.waves.length) { en.hp *= 2; en.max *= 2; }
-  if (s.mid) { en.mid = true; en.boss = true; en.lives = 10; playMusic((DB.ts[B.set].game === 'E' ? '_e' : '_') + 'boss'); }
+  if (s.mid) { en.mid = true; en.boss = true; en.lives = 10; }
   B.en.push(en); G.seen[s.id] = 1;
   return en;
 }
@@ -456,14 +457,8 @@ function addFx(ref, x, y, dir, ang) { const a = DB.fx.anims[ref]; if (a) B.fx.pu
 function dirRow(dx, dy) { const deg = Math.atan2(dy, dx) * 180 / Math.PI; return ((Math.round((90 - deg) / 45) % 8) + 8) % 8; }
 
 /* ---------- update ---------- */
-function midMusic() {   // midboss gone (knocked out or got through): back to the heavy-wave song
-  const out = B.phase === 'wave' && B.en.some(e => e.mid && e.hp > 0 && e.d > 0);
-  if (B.midWas && !out && DB.snd.music._heavy) playMusic('_heavy');
-  B.midWas = out;
-}
 function tick(dt) {
   if (!B || B.phase === 'win' || B.phase === 'lose' || B.paused) return;
-  midMusic();
   dt *= B.speed; B.time += dt;
   if (B.phase === 'wave') {
     if (B.q.length) { B.qt -= dt; while (B.q.length && B.qt <= 0) { const s = B.q.shift(); spawn(s); B.qt += s.gap; } }
