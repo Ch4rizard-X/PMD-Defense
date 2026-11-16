@@ -12,7 +12,7 @@ const STS_COL := {"paralysis": Color("#ff0"), "sleep": Color("#aaf"), "freeze": 
 var PROJ_FRONT := {"efob013/anim48": PI / 2, "efob136/anim16": PI / 2, "efob136/anim24": PI / 2, "efob062/anim00": PI / 2,
 	"efob052/anim00": PI / 2, "efob118/anim00": PI / 2, "efob013/anim32": PI / 2, "efob013/anim08": 0.0,
 	"efob069/anim00": PI / 2, "efob127/anim00": PI / 2, "efob013/anim16": -PI / 2}   # Megahorn and Icicle Spear lead with their point
-var flash: Node2D; var sky: Node2D
+var flash: Node2D; var sky: Node2D; var glitch: Node2D
 var font: Font
 
 func _ready() -> void:
@@ -24,10 +24,35 @@ func _ready() -> void:
 	var mat := ShaderMaterial.new(); mat.shader = sh; flash.material = mat
 	flash.draw.connect(_draw_flash); add_child(flash)
 	sky = Node2D.new(); sky.name = "Sky"; sky.draw.connect(_draw_sky); add_child(sky)
+	# Ultra Wormhole (the user's choice): the map glitches - bands of it jump sideways in bursts, red / blue edges drift
+	# apart and back, and its colours slowly cycle. Drawn behind everything else, on the map only.
+	glitch = Node2D.new(); glitch.name = "Glitch"; glitch.show_behind_parent = true; glitch.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	var gs := Shader.new()
+	gs.code = """shader_type canvas_item;
+float h(float x){ return fract(sin(x * 12.9898) * 43758.5453); }
+void fragment(){
+	vec2 uv = UV;
+	float tick = floor(TIME * 8.0);
+	float burst = step(0.75, h(floor(TIME * 3.0) + 0.37));                 // short bursts a few times a few seconds
+	float band = floor(uv.y * 36.0);
+	float r = h(band * 7.31 + tick * 1.7);
+	uv.x += burst * step(0.7, r) * (r - 0.85) * 0.3;                     // slice jitter
+	float sp = (0.0015 + 0.0025 * (0.5 + 0.5 * sin(TIME * 1.7))) * (1.0 + burst * 2.0);   // colour split
+	vec4 c = texture(TEXTURE, uv);
+	vec3 col = vec3(texture(TEXTURE, uv + vec2(sp, 0.0)).r, c.g, texture(TEXTURE, uv - vec2(sp, 0.0)).b);
+	float a = TIME * 0.35;                                                  // colour cycling (hue turn)
+	vec3 k = vec3(0.57735);
+	col = col * cos(a) + cross(k, col) * sin(a) + k * dot(k, col) * (1.0 - cos(a));
+	COLOR = vec4(col, c.a);
+}"""
+	var gm := ShaderMaterial.new(); gm.shader = gs; glitch.material = gm
+	glitch.draw.connect(func():
+		if BT.B and C.special_of(BT.B.set) == "wormhole": glitch.draw_texture(BT.B.M.tex, Vector2.ZERO))
+	add_child(glitch)
 	texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 
 func _process(_dt: float) -> void:
-	if BT.B: queue_redraw(); flash.queue_redraw(); sky.queue_redraw()
+	if BT.B: queue_redraw(); flash.queue_redraw(); sky.queue_redraw(); glitch.queue_redraw()
 
 # ---------- pieces ----------
 func anim_frame(a: Dictionary, t: float, loop := true) -> int:
@@ -135,7 +160,7 @@ func _draw() -> void:
 	var B = BT.B
 	if B == null: return
 	var M: Dictionary = B.M
-	draw_texture(M.tex, Vector2.ZERO)
+	if C.special_of(B.set) != "wormhole": draw_texture(M.tex, Vector2.ZERO)   # the wormhole's map is drawn glitched by the Glitch child
 	if B.get("snowlook", false):   # winter: a light dusting of snow on the land and path (water / lava stay clear)
 		if _snow == null or _snow_for != M: _snow = _make_snow(M); _snow_for = M
 		draw_texture_rect(_snow, Rect2(0, 0, M.W * TZ, M.H * TZ), false)
