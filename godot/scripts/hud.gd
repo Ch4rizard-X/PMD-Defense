@@ -110,15 +110,21 @@ func build_team() -> void:
 # lives if it gets through (the final boss: 20). The whole midboss wave plays the boss song (_wave_music).
 # battle.gd can't be patched, so new arrivals are powered up here the frame they appear.
 var _hv_seen := 0
+# early tiers were too easy (the user's call): wild Pokémon, bosses included, get 30% more HP up to threat tier 3
+# (Beginner tiers 1-5, Intermediate tier 1), fading to none at threat tier 6 (Beginner tier 11, Intermediate tier 7)
+static func early_hp_at(th: float) -> float: return 1.0 + 0.3 * clampf((6.0 - th) / 3.0, 0.0, 1.0)
+func early_hp() -> float: return early_hp_at(B.th)
 func _heavy_hook() -> void:
 	if B.phase != "wave": return
 	var heavy: bool = B.wave % 5 == 0 and B.wave != B.waves.size()
 	var mid = null
 	if heavy:
 		for x in B.waves[B.wave - 1]: if x.get("mid", 0): mid = x
+	var em := early_hp()
 	for e in B.en:
 		if e.eid > _hv_seen:
 			_hv_seen = max(_hv_seen, e.eid)
+			if em > 1.0: e.hp = int(e.hp * em); e.max = int(e.max * em)
 			if heavy:
 				e.hp *= 2; e.max *= 2
 				if mid != null and e.id == mid.id and e.lv == mid.lv and not e.get("mid", false):

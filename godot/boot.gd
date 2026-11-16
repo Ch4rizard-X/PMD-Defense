@@ -1,7 +1,7 @@
 extends Node
 # Route Defense - boot: loads a downloaded code patch (user://patch.pck) before the game starts.
 # This script is never patched itself, so keep it tiny. A patch that fails to start is skipped next time.
-const BUILT_V := 1                       # the code version inside this APK (raised with every APK build)
+const BUILT_V := 25                      # the code version inside this build
 const PATCH := "user://patch.pck"        # newest downloaded code (scripts only; graphics stay in the APK)
 const INFO := "user://patch.txt"         # its version number
 const TRY := "user://patch_try.txt"      # set while a patch is starting; the game clears it once it runs fine
