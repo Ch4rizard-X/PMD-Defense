@@ -101,7 +101,7 @@ func build_team() -> void:
 	refresh_hud(); layout.call_deferred()
 # heavy waves (every 5th): every wild Pokémon has double HP. Midboss waves (every 10th): the midboss (the wave's one
 # entry marked "mid", 3 levels above the rest) gets double HP, the boss HP bar, boss resistances and rewards, costs 10
-# lives if it gets through (the final boss: 20), and plays the boss song while it's out.
+# lives if it gets through (the final boss: 20). The whole midboss wave plays the boss song (_wave_music).
 # battle.gd can't be patched, so new arrivals are powered up here the frame they appear.
 var _hv_seen := 0
 func _heavy_hook() -> void:
@@ -110,7 +110,6 @@ func _heavy_hook() -> void:
 	var mid = null
 	if heavy:
 		for x in B.waves[B.wave - 1]: if x.get("mid", 0): mid = x
-	var mid_out := false
 	for e in B.en:
 		if e.eid > _hv_seen:
 			_hv_seen = max(_hv_seen, e.eid)
@@ -118,11 +117,6 @@ func _heavy_hook() -> void:
 				e.hp *= 2; e.max *= 2
 				if mid != null and e.id == mid.id and e.lv == mid.lv and not e.get("mid", false):
 					e.mid = true; e.boss = true; e.lives = 10
-					Snd.play_music(("_e" if C.DB.ts[B.set].game == "E" else "_") + "boss")
-		if e.get("mid", false) and e.hp > 0 and e.d > 0: mid_out = true
-	if _mid_was and not mid_out and C.DB.snd.music.has("_heavy"): Snd.play_music("_heavy")   # midboss gone: back to the heavy-wave song
-	_mid_was = mid_out
-var _mid_was := false
 # the level-up sound plays one at a time: while it's still playing, new ones (fast upgrades, several level-ups at once)
 # are skipped. snd.gd can't be patched, so its 'last played' time for that sound is kept current while it plays.
 var _lvl_path := ""
@@ -425,7 +419,8 @@ func ask_join() -> void:   # a knocked-out wild Pokémon asks to join: the battl
 func _wave_music() -> void:
 	if B == null or B.phase != "wave": return
 	var last: bool = B.wave == B.waves.size()
-	if B.wave % 5 == 0 and not last and C.DB.snd.music.has("_heavy"): Snd.play_music("_heavy")
+	if B.wave % 10 == 0 and not last: Snd.play_music(("_e" if C.DB.ts[B.set].game == "E" else "_") + "boss")   # midboss wave: the boss song all wave
+	elif B.wave % 5 == 0 and not last and C.DB.snd.music.has("_heavy"): Snd.play_music("_heavy")
 	elif last:
 		var leg := false; var bid = null
 		for x in B.waves[B.wave - 1]:
