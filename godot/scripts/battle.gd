@@ -357,6 +357,7 @@ func tower_act(t: Dictionary) -> bool:
 func aoe(M: Dictionary) -> bool: return M.tg == 9 or M.tg == 11 or M.tg == 14 or M.tg == 12
 func fire(t: Dictionary, b: Dictionary, st: Array) -> void:
 	var M := mvd(b.m); var fx: Dictionary = C.DB.fx.moves.get(b.m, {})
+	if has_node("/root/Snd"): get_node("/root/Snd").move_sfx(b.m)   # the move's own sound
 	t.dir = dir_row(b.tg.x - t.x, b.tg.y - t.y); t.anim = "Attack" if M.c == 2 else "Shoot"; t.at = 0.0
 	var cd := 5.5 / sqrt(max(5, M.pp)) * (0.8 if M.get("pr", 0) > 0 else 1.0)
 	cd /= 1 + st[5] * STAGE(buf_of(t, 5)) / 150.0
@@ -846,6 +847,7 @@ func sk_fx(m: int, x: float, y: float, dir := 0) -> void:
 		if r: add_fx(r, x, y - 8 * ESPR, dir)
 func sk_use(t: Dictionary, m: int, e = null) -> void:
 	var f = C.DB.fx.moves.get(m, null)
+	if has_node("/root/Snd"): get_node("/root/Snd").move_sfx(m)
 	if f and f.has("u"): add_fx(f.u, t.x, t.y, t.dir)
 	if e != null: t.dir = dir_row(e.x - t.x, e.y - t.y); sk_fx(m, e.x, e.y, t.dir)
 	t.anim = "Shoot"; t.at = 0.0

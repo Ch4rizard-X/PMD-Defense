@@ -5,12 +5,15 @@ var music: AudioStreamPlayer
 var fx: Array[AudioStreamPlayer] = []
 var cur := ""; var want := ""
 var last := {}
+var mvfx: Array[AudioStreamPlayer] = []; var mv_last := {}; var mv_any := 0
 const VOL := 0.5; const SFX_VOL := 0.6
 
 func _ready() -> void:
 	music = AudioStreamPlayer.new(); add_child(music); music.volume_db = linear_to_db(VOL)
 	for i in 6:
 		var p := AudioStreamPlayer.new(); p.volume_db = linear_to_db(SFX_VOL); add_child(p); fx.append(p)
+	for i in 4:   # move sounds have their own players, so a busy battle never cuts off menu / level-up sounds
+		var p := AudioStreamPlayer.new(); p.volume_db = linear_to_db(SFX_VOL * 0.8); add_child(p); mvfx.append(p)
 func muted() -> bool: return C.G != null and C.G.opts.get("mute", false)
 func _stream(f: String) -> AudioStream:
 	var p := "res://snd/%s.mp3" % f
@@ -38,3 +41,17 @@ func sfx(key: String) -> void:
 	for p in fx:
 		if not p.playing:
 			p.stream = _stream(f); p.play(); return
+# a move's own sound (Explorers of Sky's, from its move-animation data; snd.bin "mv": move id -> file). Kept from
+# becoming noise: the same sound at most every 0.12 s, any move sound at most every 0.05 s, and when all 4 move
+# players are busy the new one is skipped (nothing is cut off).
+func move_sfx(m: int) -> void:
+	if muted(): return
+	var f = C.DB.snd.get("mv", {}).get(m, null)
+	if f == null: return
+	var now := Time.get_ticks_msec()
+	if now - mv_any < 50 or now - mv_last.get(f, -100000) < 120: return
+	for p in mvfx:
+		if not p.playing:
+			var s = _stream(f)
+			if s == null: return
+			p.stream = s; p.play(); mv_any = now; mv_last[f] = now; return
