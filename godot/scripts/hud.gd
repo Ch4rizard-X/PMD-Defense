@@ -422,7 +422,10 @@ func _wave_music() -> void:
 	if B == null or B.phase != "wave": return
 	var last: bool = B.wave == B.waves.size()
 	if B.wave % 10 == 0 and not last: Snd.play_music(("_e" if C.DB.ts[B.set].game == "E" else "_") + "boss")   # midboss wave: the boss song all wave
-	elif B.wave % 5 == 0 and not last and C.DB.snd.music.has("_heavy"): Snd.play_music("_heavy")
+	elif B.wave % 5 == 0 and not last and C.DB.snd.music.has("_heavy"):   # heavy wave: Monster House, Explorers of Sky's or Red's at random
+		var mh := ["_heavy"]
+		if C.DB.snd.music.has("_heavy2") and ResourceLoader.exists("res://snd/%s.mp3" % C.DB.snd.music._heavy2): mh.append("_heavy2")
+		Snd.play_music(mh[randi() % mh.size()])
 	elif last:
 		var leg := false; var bid = null
 		for x in B.waves[B.wave - 1]:
