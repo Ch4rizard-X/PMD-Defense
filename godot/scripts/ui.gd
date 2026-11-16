@@ -14,7 +14,7 @@ func _ready() -> void:
 	set_anchors_preset(Control.PRESET_FULL_RECT); theme = K.theme
 	K.root = self
 	if C.G == null: C.G = C.new_save()
-	tm_init()
+	map_reorder(); tm_init()
 	K.toasts = VBoxContainer.new(); K.toasts.set_anchors_preset(Control.PRESET_CENTER_TOP); K.toasts.anchor_left = 0.5; K.toasts.anchor_right = 0.5
 	K.toasts.offset_top = 60; K.toasts.grow_horizontal = Control.GROW_DIRECTION_BOTH; K.toasts.mouse_filter = Control.MOUSE_FILTER_IGNORE; K.toasts.z_index = 50
 	apply_ui_size()
@@ -438,15 +438,26 @@ func hub_box(body: VBoxContainer) -> void:
 	body.add_child(K.lbl("%d Pokémon. Tap one to see its moves and evolutions." % G.box.size(), 13, K.DIM))
 	var g := K.grid(); body.add_child(g)
 	var l: Array = G.box.duplicate(); l.sort_custom(func(a, b): return a.lv > b.lv)
+	_mon_seq = l
 	for e in l: g.add_child(mon_card(e, func(): mon_panel(e, func(): show_hub())))
 func move_row(m: int) -> PanelContainer:
 	var p := K.boxp(); var v := K.vbox(2); p.add_child(v); var M := C.mv(m)
 	var h := K.hbox(4); h.add_child(K.type_tag(M.t)); h.add_child(K.lbl(M.n, 16, Color.WHITE, false)); v.add_child(h)
 	v.add_child(K.lbl(C.move_desc(m), 12, K.DIM)); return p
+# swipe left / right on a Pokémon's page for the next / previous one, in the Box's order (the user's request)
+var _mon_seq: Array = []; var _mon_nav := {}
+func mon_swipe(dir: int) -> void:
+	if _mon_nav.is_empty() or not is_instance_valid(_mon_nav.box) or not _mon_nav.box.is_inside_tree(): return
+	var i: int = _mon_seq.find(_mon_nav.e)
+	if i < 0 or _mon_seq.size() < 2: return
+	mon_panel(_mon_seq[(i + dir + _mon_seq.size()) % _mon_seq.size()], _mon_nav.after)
 func mon_panel(e: Dictionary, after = null) -> void:
 	var box := K.panel(after)
+	_mon_nav = {"e": e, "after": after, "box": box}
 	var render := func(self_ref: Callable) -> void:
 		K.clear(box)
+		var si: int = _mon_seq.find(e)
+		if si >= 0 and _mon_seq.size() > 1 and screen != "battle": box.add_child(_center(K.lbl("< swipe for the next Pokémon (%d / %d) >" % [si + 1, _mon_seq.size()], 12, K.DIM)))
 		var s: Dictionary = C.SP[e.id]; var st: Array = C.mon_stats(e)
 		var nx: int = C.xp_for(s.gr, e.lv + 1) if e.lv < C.MAXLV else e.xp; var cur: int = C.xp_for(s.gr, e.lv)
 		var head := K.hbox(10); box.add_child(head)
@@ -592,6 +603,39 @@ func give_panel(e: Dictionary, back: Callable) -> void:
 # they drop from won battles; teaching with 4 moves known forgets one ----------
 const TMD := preload("res://scripts/tmdata.gd")
 var _tm_tex := {}
+# ---- map order (the user's choice): story dungeons of both games first, in story order (Red and Explorers of Sky
+# interleaved), then post-game dungeons ranked by their deepest floors' wild level against their own game's final story
+# dungeon (pmd-red decomp pokemon_found tables, Explorers of Sky mappa_s); each dungeon's floor sections stay together.
+# Reorders the app's map list by name and moves saved progress (opened tiers, stars) with each map, once.
+const MAP_ORDER := ["Tiny Woods", "Beach Cave", "Mt Bristle", "Mt Steel", "Apple Woods", "Sinister Woods", "Craggy Coast", "Silent Chasm", "Mt Horn", "Foggy Forest", "Mt Thunder", "Steam Cave", "Mt Thunder Peak", "Amp Plains", "Great Canyon", "Northern Desert", "Crystal Cave", "Lapis Cave", "Dark Hill", "Mt Blaze", "Sealed Ruin", "Frosty Forest", "Dusk Forest", "Treeshroud Forest", "Mt Freeze", "Brine Cave", "Magma Cavern", "Temporal Tower", "Sky Tower", "Temporal Spire", "Oran Forest", "Serenity River", "Murky Forest", "Lush Prairie", "Tiny Meadow", "Landslide Cave", "Uproar Forest", "Southern Jungle", "Oddity Cave", "Mystifying Forest", "Limestone Cavern", "Icicle Forest", "Mystery Jungle", "Mt Mistral", "Mt Avalanche", "Blizzard Island", "Shimmer Desert", "Rock Aegis Cave", "Howling Forest", "Howling Forest 8F-15F", "Mt Travail", "Giant Volcano", "Dark Crater", "Murky Cave", "Waterfall Pond", "Darknight Relic", "Remains Island", "Joyous Tower", "Northern Range", "Fantasy Strait", "Buried Relic 1F-20F", "Buried Relic 21F-50F", "Buried Relic", "Desert Region", "Southern Cavern", "Southern Cavern 24F-50F", "Meteor Cave", "Wyvern Hill", "Dojo Registration", "Dojo Registration 7F-60F", "Dojo Registration 31F-33F", "Dojo Registration 67F-69F", "Inferno Cave", "Wish Cave", "Wish Cave 14F-29F", "Wish Cave 40F-49F", "Wish Cave 50F-59F", "Wish Cave 60F-69F", "Wish Cave 90F-99F", "Silver Trench", "Silver Trench 70F-98F", "Lightning Field", "Fiery Field", "Northwind Field", "Purity Forest", "Purity Forest 30F-43F", "Purity Forest 44F-60F", "Purity Forest 61F-79F", "Purity Forest 80F-99F", "Mt Faraway 1F-9F", "Mt Faraway 10F-20F", "Mt Faraway", "Mt Faraway 30F-39F", "Western Cave 1F-27F", "Western Cave", "Western Cave 40F-99F"]
+func map_reorder() -> void:
+	var n: int = C.NMAPS; var cur: Array = C.DB.ts.slice(0, n); var by := {}
+	for i in n: by[cur[i].name] = i
+	for nm in MAP_ORDER: if not by.has(nm): return   # a build with other maps: leave it
+	if MAP_ORDER.size() != n: return
+	var nw := []
+	for nm in MAP_ORDER: nw.append(cur[by[nm]])
+	if C.G != null and int(C.G.get("map_order", 0)) < 2:
+		var o2n := {}
+		for i in n: o2n[i] = MAP_ORDER.find(cur[i].name)
+		var mt := {}
+		for k in C.G.mt: mt[o2n.get(int(k), int(k))] = C.G.mt[k]
+		C.G.mt = mt
+		var md := {}
+		for k in C.G.get("mtDone", {}): md[o2n.get(int(k), int(k))] = C.G.mtDone[k]
+		C.G.mtDone = md
+		var sr := {}
+		for k in C.G.stars:
+			var a: PackedStringArray = str(k).split(":")
+			sr["%d:%s" % [o2n.get(int(a[0]), int(a[0])), a[1]]] = C.G.stars[k]
+		C.G.stars = sr
+		C.G.map_order = 2
+		C.DB.ts = nw + C.DB.ts.slice(n)
+		# a map whose map before (in the same group) you've already won opens, as a win there would have opened it
+		for i in range(1, n):
+			if C.map_group(i) == C.map_group(i - 1) and C.map_cleared(i - 1) > 0 and not C.map_open(i): C.G.mt[i] = 1
+		C.save(); return
+	C.DB.ts = nw + C.DB.ts.slice(n)
 func tm_init() -> void:   # the TM moves the game didn't have yet join the move list
 	for k in TMD.MOVES: if not C.DB.dex.moves.has(k): C.DB.dex.moves[k] = TMD.MOVES[k]
 	if C.G != null and not C.G.has("tms"): C.G.tms = {}
@@ -891,7 +935,7 @@ func hub_bag(body: VBoxContainer) -> void:
 	body.add_child(K.btn("Delete save", func():
 		var b := K.panel(); K.panel_title(b, "Delete your save?"); b.add_child(K.lbl("This can't be undone."))
 		var h := K.hbox(); b.add_child(h)
-		h.add_child(K.btn("Delete", func(): DirAccess.remove_absolute(C.SAVE_PATH); C.G = C.new_save(); K.close_panel(false); show_title()))
+		h.add_child(K.btn("Delete", func(): DirAccess.remove_absolute(C.SAVE_PATH); C.G = C.new_save(); C.G.map_order = 2; K.close_panel(false); show_title()))
 		h.add_child(K.btn("Keep", func(): K.close_panel(), true)), true, true))
 
 # ---------- options ----------
@@ -982,8 +1026,24 @@ func _scroll_at(p: Vector2) -> ScrollContainer:
 		if n is ScrollContainer and not n.has_meta("own_drag") and n.get_global_rect().has_point(p): best = n   # later in the tree = drawn on top / nested deeper
 		var ch := n.get_children(); ch.reverse(); st.append_array(ch)
 	return best
+var _hs = null   # a sideways swipe on a Pokémon's page
 func _input(ev: InputEvent) -> void:
 	if _sw_fake: return
+	if ev is InputEventMouseButton and ev.button_index == MOUSE_BUTTON_LEFT:
+		if ev.pressed: _hs = {"p": ev.position, "on": false}
+		elif _hs != null:
+			var hd: Vector2 = ev.position - _hs.p; var was_on: bool = _hs.on; _hs = null
+			if was_on:
+				get_viewport().set_input_as_handled(); _sw = null
+				if absf(hd.x) > get_viewport().get_visible_rect().size.x * 0.15: mon_swipe(-1 if hd.x > 0 else 1)
+				return
+	elif ev is InputEventMouseMotion and _hs != null and not _mon_nav.is_empty() and is_instance_valid(_mon_nav.box) and _mon_nav.box.is_inside_tree():
+		var hd: Vector2 = ev.position - _hs.p
+		if not _hs.on and absf(hd.x) > 18 and absf(hd.x) > absf(hd.y) * 2 and (_sw == null or not _sw.on):
+			_hs.on = true; _sw = null
+			var up := InputEventMouseButton.new(); up.button_index = MOUSE_BUTTON_LEFT; up.pressed = false; up.position = Vector2(-9999, -9999); up.global_position = up.position
+			_sw_fake = true; get_viewport().push_input(up); _sw_fake = false   # the button under the finger lets go without firing
+		if _hs.on: get_viewport().set_input_as_handled(); return
 	if ev is InputEventMouseButton and ev.button_index == MOUSE_BUTTON_LEFT:
 		if ev.pressed:
 			_gl_sc = null
