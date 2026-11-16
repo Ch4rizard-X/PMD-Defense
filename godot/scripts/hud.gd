@@ -97,6 +97,17 @@ func build_team() -> void:
 		c.gui_input.connect(func(ev): _row_input(ev, e))
 		teamrow.add_child(c); tcards[e.u] = {"c": c, "tl": tl, "ic": ic, "id": e.id, "e": e}
 	refresh_hud(); layout.call_deferred()
+# the level-up sound plays one at a time: while it's still playing, new ones (fast upgrades, several level-ups at once)
+# are skipped. snd.gd can't be patched, so its 'last played' time for that sound is kept current while it plays.
+var _lvl_path := ""
+func _hold_lvl_sfx() -> void:
+	if _lvl_path == "":
+		var f = C.DB.snd.sfx.get("lvl", null)
+		if f == null: return
+		_lvl_path = "res://snd/%s.mp3" % f
+	for p in Snd.fx:
+		if p.playing and p.stream != null and p.stream.resource_path == _lvl_path:
+			Snd.last["lvl"] = Time.get_ticks_msec(); return
 # team row: swipe anywhere on it to scroll (with a little glide); a tap that didn't move picks the card
 var _rdrag = null; var _rvel := 0.0
 func _mv_is(t, m) -> bool: return _mv_open.size() == 2 and is_same(_mv_open[0], t) and _mv_open[1] == m
@@ -230,7 +241,7 @@ func _place_tinfo() -> void:
 	tinfo.position = Vector2((vs.x - tinfo.size.x) / 2, _team_top - tinfo.size.y - 6)
 func _process(dt: float) -> void:
 	if B == null: return
-	_row_glide(dt)
+	_row_glide(dt); _hold_lvl_sfx()
 	BT.tick(min(0.05, dt))
 	if B.asks.size() and K.modal == null: ask_join()
 	_hud_t -= dt
