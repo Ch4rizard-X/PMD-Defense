@@ -76,6 +76,7 @@ func wave_count(tier: int) -> int: return 20 + int(round((tier - 1) * 20 / 19.0)
 # the old wave numbering (40 at tier 1, +1 per tier): wave sizes and gaps follow where a wave sits in the map, so a short
 # map's waves are as big as the old long map's at the same point; per-wave rewards are doubled to keep each battle's total
 func old_wave(w: int, tier: int) -> float: return w * (40.0 + tier - 1) / wave_count(tier)
+func evo_half() -> bool: return true   # tells the HUD this build halves evolved heavies' joins itself
 func wave_mul() -> float: return (40.0 + B.tier - 1) / wave_count(B.tier)   # rewards per wave: x2 at tier 1 ... x1.475 at tier 20
 # which wild Pokémon a map and tier can send: the wave builder draws from these, and the route panel lists them
 func spawn_info(set_idx: int, tier0: int) -> Dictionary:
@@ -238,6 +239,7 @@ func spawn(s: Dictionary, d := 0.0) -> Dictionary:
 		en.bt = {"wx": 1.0, "up": 4.0, "call": 8.0}
 	if s.get("boss", 0) and C.DB.snd.has("bossTheme") and C.DB.snd.bossTheme.has(s.id): music(C.DB.snd.bossTheme[s.id])   # this boss has its own song in the ROMs
 	if s.get("minion", 0): en.lives = 1
+	if s.get("evo", 0): en.evo = 1
 	if s.has("rival"):
 		en.rival = s.rival; en.hp *= 2; en.max *= 2; en.pace = 1.25; en.lives = 5
 		var rv: Dictionary = B.get("rival", {})
@@ -686,6 +688,7 @@ func ko(t, e: Dictionary) -> void:
 		if sp.anim and not B.declined.has(e.id) and not asked and not e.has("rival"):
 			var p: float = ((0.25 if B.get("legend", false) else 0.04) + mod("bossRecruit") if e.boss else 0.005 * (sp.cr / 255.0) * (1 + B.th * 0.05) * (1 - 0.5 * clampf((B.th - 4) / 5.0, 0, 1))) * (1 + mod("recruit")) * (3.0 if e.get("fs", false) else 1.0) * (2.0 if e.get("lure", 0.0) > B.time else 1.0)
 			p *= 3.0 if e.get("alpha", false) else 1.0   # Alpha: likelier to join (a shiny joins as often as any other)
+			p *= 0.5 if e.get("evo", 0) else 1.0   # evolved heavy / boss Pokémon (ui.evolve_heavies): half as likely
 			if rnd() < p: B.asks.append({"id": e.id, "lv": e.lv, "ab": e.ab, "nat": e.nat, "iv": e.iv, "shiny": e.get("shiny", false), "alpha": e.get("alpha", false)}); sfx("join"); ask_join.emit()
 	# evolved Pokémon fall back to their earlier stage (they keep coming)
 	var s := SP(e.id)

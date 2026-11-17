@@ -413,6 +413,11 @@ func pause_menu() -> void:
 	h.add_child(K.btn("Give up", func(): K.close_panel(false); BT.finish(false), true))
 func ask_join() -> void:   # a knocked-out wild Pokémon asks to join: the battle pauses and you decide
 	if B == null or B.asks.is_empty() or K.modal != null or ui.screen != "battle": return
+	if not BT.has_method("evo_half"):   # app builds before evolved heavies: half their asks are dropped here instead
+		while B.asks.size() and B.get("evo_only", {}).has(B.asks[0].id) and not B.asks[0].get("evok", false):
+			if randf() < 0.5: B.asks.pop_front()
+			else: B.asks[0].evok = true
+		if B.asks.is_empty(): return
 	var a: Dictionary = B.asks.pop_front(); var s: Dictionary = C.SP[a.id]; var A = C.DB.dex.abil.get(a.ab, null); var moves: Array = C.best_moves(a.id, a.lv)
 	B.paused = true
 	var box := K.panel(func():

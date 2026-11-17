@@ -1177,6 +1177,26 @@ func rework_heavy(set_idx: int, tier0: int, seed: int) -> void:
 			var mb = cand[int(floor(R.next() * cand.size()))]
 			list.insert(n / 2, {"id": mb.id, "lv": min(100, lv + 3), "gap": 1.6, "mid": 1})
 		B.waves[w - 1] = list
+	evolve_heavies(R)
+# ---- heavy-wave, midboss and boss Pokémon come one evolution stage up (the user's choice, every map and tier); the
+# evolved ones ask to join half as often. Legendary challenge bosses and Pokémon with no animated evolution stay as
+# they are. Evolved heavies drop their earlier stage when knocked out, like every evolved wild Pokémon.
+func evo_up(id: int, R) -> int:
+	var to := []
+	for v in C.SP.get(id, {}).get("ev", []):
+		if C.SP.has(v.to) and C.SP[v.to].anim and int(v.to) < C.SHINY: to.append(int(v.to))
+	return id if to.is_empty() else to[int(floor(R.next() * to.size()))]
+func evolve_heavies(R) -> void:
+	var B: Dictionary = BT.B; var W: int = B.waves.size(); var evo := {}; var plain := {}
+	for w in range(1, W + 1):
+		for x in B.waves[w - 1]:
+			var heavy: bool = (w % 5 == 0 and w < W) or x.get("boss", 0) or x.get("mid", 0)
+			if heavy and not (x.get("boss", 0) and B.get("legend", false)):
+				var nid := evo_up(x.id, R)
+				if nid != x.id: x.id = nid; x.evo = 1; evo[nid] = 1; continue
+			plain[x.id] = 1
+	B.evo_only = {}
+	for k in evo: if not plain.has(k): B.evo_only[k] = 1   # species met only as evolved heavies / bosses: their join asks are halved here
 # small corner badges on a card: gold star for a shiny, red alpha for an Alpha
 func _badges(parent: Control, e: Dictionary) -> void:
 	var tx := ("★" if e.get("shiny", false) else "") + ("α" if e.get("alpha", false) else "")
