@@ -14,7 +14,7 @@ func _ready() -> void:
 	set_anchors_preset(Control.PRESET_FULL_RECT); theme = K.theme
 	K.root = self
 	if C.G == null: C.G = C.new_save()
-	map_reorder(); tm_init()
+	map_reorder(); tm_init(); stones_init()
 	K.toasts = VBoxContainer.new(); K.toasts.set_anchors_preset(Control.PRESET_CENTER_TOP); K.toasts.anchor_left = 0.5; K.toasts.anchor_right = 0.5
 	K.toasts.offset_top = 60; K.toasts.grow_horizontal = Control.GROW_DIRECTION_BOTH; K.toasts.mouse_filter = Control.MOUSE_FILTER_IGNORE; K.toasts.z_index = 50
 	apply_ui_size()
@@ -496,7 +496,7 @@ func mon_panel(e: Dictionary, after = null) -> void:
 		var H = C.DB.dex.held.get(e.it, null)
 		var hp := K.boxp(); var hv2 := K.vbox(2); hp.add_child(hv2); box.add_child(hp)
 		var hh := K.hbox(4); hv2.add_child(hh)
-		if H: hh.add_child(K.item_icon(e.it)); hh.add_child(K.lbl("Holding: " + H.n, 16, Color.WHITE, false))
+		if H: hh.add_child(item_icon(e.it)); hh.add_child(K.lbl("Holding: " + H.n, 16, Color.WHITE, false))
 		else: hh.add_child(K.lbl("Holding nothing"))
 		if H:
 			hv2.add_child(K.lbl(C.HELD_TD.get(H.k, ""), 12, K.DIM))
@@ -539,7 +539,7 @@ func mon_panel(e: Dictionary, after = null) -> void:
 			for o in ev:
 				var p := K.boxp(); var h := K.hbox(6); p.add_child(h); box.add_child(p)
 				h.add_child(K.icon(o.to, 32)); h.add_child(K.lbl(C.SP[o.to].n, 16, Color.WHITE, false))
-				if o.item: h.add_child(K.item_icon(o.item))
+				if o.item: h.add_child(item_icon(o.item))
 				h.add_child(K.lbl("(%s)" % o.why, 12, K.DIM, false))
 				if o.ok: h.add_child(K.btn("Evolve", func(): _evolve(e, o, s.n); self_ref.call(self_ref), false, true))
 		# forms (Rotom, Deoxys, Shaymin, Arceus Plates, Silvally Memories) and Kyurem's fusions: out of battle only
@@ -597,7 +597,7 @@ func give_panel(e: Dictionary, back: Callable) -> void:
 			if not G.held[k]: G.held.erase(k)
 			e.it = k; C.save(); K.close_panel())
 		var cb := K.card_box(p); cb.alignment = BoxContainer.ALIGNMENT_BEGIN
-		var h := K.hbox(4); h.add_child(K.item_icon(k)); h.add_child(K.lbl("%s x%d" % [H.n, G.held[k]], 16, Color.WHITE, false)); cb.add_child(h); cb.add_child(K.lbl(C.HELD_TD.get(H.k, ""), 12, K.DIM)); box.add_child(p)
+		var h := K.hbox(4); h.add_child(item_icon(k)); h.add_child(K.lbl("%s x%d" % [H.n, G.held[k]], 16, Color.WHITE, false)); cb.add_child(h); cb.add_child(K.lbl(C.HELD_TD.get(H.k, ""), 12, K.DIM)); box.add_child(p)
 	box.add_child(K.btn("Back", func(): K.close_panel(), true))
 # ---------- TMs (the user's choices): each Pokémon's TM moves from its newest main game; a TM is used up when taught;
 # they drop from won battles; teaching with 4 moves known forgets one ----------
@@ -733,7 +733,7 @@ func tool_panel(e: Dictionary, back: Callable) -> void:   # use a Mint or Bottle
 		if G.tools[k] <= 0: continue
 		var T: Dictionary = C.DB.dex.tools[k]
 		var p := K.boxp(); var v := K.vbox(3); p.add_child(v); b.add_child(p)
-		var h := K.hbox(4); h.add_child(K.item_icon(k)); h.add_child(K.lbl("%s x %d" % [T.n, G.tools[k]], 16, Color.WHITE, false)); v.add_child(h)
+		var h := K.hbox(4); h.add_child(item_icon(k)); h.add_child(K.lbl("%s x %d" % [T.n, G.tools[k]], 16, Color.WHITE, false)); v.add_child(h)
 		if T.kind == "mint":
 			v.add_child(K.lbl("Stats change as if its nature were " + C.nat_label(T.nat), 12, K.DIM))
 			if C.nat_of(e) == T.nat: v.add_child(K.lbl("Already has this effect.", 12, K.DIM))
@@ -888,17 +888,17 @@ func hub_shop(body: VBoxContainer) -> void:
 		for m in C.DB.dex.mon:
 			for v in m.ev: if v.get("item", 0) == id: users.append(m.n); break
 		var c := K.card(150, func(): _buy(price, "items", id)); var cb := K.card_box(c)
-		cb.add_child(K.item_icon(id)); cb.add_child(_center(K.lbl(name, 15)))
+		cb.add_child(item_icon(id)); cb.add_child(_center(K.lbl(name, 15)))
 		cb.add_child(_center(K.lbl(", ".join(users.slice(0, 4)) + ("..." if users.size() > 4 else ""), 12, K.DIM))); cb.add_child(_center(K.lbl("₽%d - have %d" % [price, G.items.get(id, 0)], 13)))
 		g.add_child(c)
 	body.add_child(K.lbl("Held items", 18, K.GOLD)); body.add_child(K.lbl("Choice items, Life Orb and Expert Belt are only found on tier 6+ routes.", 13, K.DIM))
 	var g2 := K.grid(); body.add_child(g2)
 	for id in C.DB.dex.held:
 		var H: Dictionary = C.DB.dex.held[id]; var pr: int = C.held_price(H.k)
-		if not pr: continue
+		if not pr or is_stone(id): continue   # Mega Stones only drop from bosses
 		pr = C.shop_price(pr)
 		var c := K.card(150, func(): _buy(pr, "held", id)); var cb := K.card_box(c)
-		cb.add_child(K.item_icon(id)); cb.add_child(_center(K.lbl(H.n, 15))); cb.add_child(_center(K.lbl(C.HELD_TD.get(H.k, ""), 12, K.DIM))); cb.add_child(_center(K.lbl("₽%s - have %d" % [_num(pr), G.held.get(id, 0)], 13)))
+		cb.add_child(item_icon(id)); cb.add_child(_center(K.lbl(H.n, 15))); cb.add_child(_center(K.lbl(C.HELD_TD.get(H.k, ""), 12, K.DIM))); cb.add_child(_center(K.lbl("₽%s - have %d" % [_num(pr), G.held.get(id, 0)], 13)))
 		g2.add_child(c)
 	body.add_child(K.lbl("Natures & IVs", 18, K.GOLD)); body.add_child(K.lbl("Use them from a Pokémon's page, outside battle. A Mint changes how its nature affects stats; a Bottle Cap raises one stat as if its IV were 31.", 13, K.DIM))
 	var g3 := K.grid(); body.add_child(g3)
@@ -906,7 +906,7 @@ func hub_shop(body: VBoxContainer) -> void:
 		var T: Dictionary = C.DB.dex.tools[id]; var pr: int = C.shop_price(C.TOOL_PRICE[T.kind])
 		var desc: String = (C.nat_label(T.nat).split(" ", true, 1)[1] if C.nat_label(T.nat).contains(" ") else C.nat_label(T.nat)) if T.kind == "mint" else ("One IV to 31" if T.kind == "bottle-cap" else "All IVs to 31")
 		var c := K.card(150, func(): _buy(pr, "tools", id)); var cb := K.card_box(c)
-		cb.add_child(K.item_icon(id)); cb.add_child(_center(K.lbl(T.n, 15))); cb.add_child(_center(K.lbl(desc, 12, K.DIM))); cb.add_child(_center(K.lbl("₽%s - have %d" % [_num(pr), G.tools.get(id, 0)], 13)))
+		cb.add_child(item_icon(id)); cb.add_child(_center(K.lbl(T.n, 15))); cb.add_child(_center(K.lbl(desc, 12, K.DIM))); cb.add_child(_center(K.lbl("₽%s - have %d" % [_num(pr), G.tools.get(id, 0)], 13)))
 		g3.add_child(c)
 func hub_bag(body: VBoxContainer) -> void:
 	var ks := []; var hs := []; var tsk := []
@@ -915,7 +915,7 @@ func hub_bag(body: VBoxContainer) -> void:
 	for k in G.tools: if G.tools[k] > 0: tsk.append(k)
 	body.add_child(K.lbl("Use items from a Pokémon's page in the Box." if (ks.size() or hs.size() or G.get("tms", {}).size()) else "Your bag is empty.", 13, K.DIM))
 	var row := func(k, name: String, n: int, desc := "") -> void:
-		var p := K.boxp(); var v := K.vbox(2); p.add_child(v); var h := K.hbox(4); h.add_child(K.item_icon(k)); h.add_child(K.lbl("%s x %d" % [name, n], 16, Color.WHITE, false)); v.add_child(h)
+		var p := K.boxp(); var v := K.vbox(2); p.add_child(v); var h := K.hbox(4); h.add_child(item_icon(k)); h.add_child(K.lbl("%s x %d" % [name, n], 16, Color.WHITE, false)); v.add_child(h)
 		if desc != "": v.add_child(K.lbl(desc, 12, K.DIM))
 		body.add_child(p)
 	for k in ks: row.call(k, C.DB.dex.items[k], G.items[k])
@@ -1201,6 +1201,53 @@ func evolve_heavies(R) -> void:
 # form's own item under its level: its Mega Stone, Blue / Red Orb, or the Key Stone for Rayquaza
 const MEGAD := preload("res://scripts/megadata.gd")
 var _mega_tex := {}
+# ---- Mega Stones as held items (the user's choice): a Pokémon Mega Evolves with Empower only while holding its own
+# Mega Stone (Primal Kyogre / Groudon: the Blue / Red Orb); Rayquaza needs none, as in the main games (it uses Dragon
+# Ascent there). Without its stone, Empower Awakens it. Stones drop from bosses: a boss whose line has a Mega can drop that
+# stone, and at tier 10+ any boss can rarely drop a random one. Not sold in the shop. Names: PokeAPI item_names.
+const STONE_NAME := {"absolite": "Absolite", "aerodactylite": "Aerodactylite", "alakazite": "Alakazite", "altarianite": "Altarianite", "banettite": "Banettite", "blue-orb": "Blue Orb", "cameruptite": "Cameruptite", "charizardite-x": "Charizardite X", "darkranite": "Darkranite", "diancite": "Diancite", "dragalgite": "Dragalgite", "drampanite": "Drampanite", "eelektrossite": "Eelektrossite", "excadrite": "Excadrite", "floettite": "Floettite", "galladite": "Galladite", "gardevoirite": "Gardevoirite", "gengarite": "Gengarite", "glalitite": "Glalitite", "hawluchanite": "Hawluchanite", "houndoominite": "Houndoominite", "kangaskhanite": "Kangaskhanite", "latiasite": "Latiasite", "latiosite": "Latiosite", "lopunnite": "Lopunnite", "lucarionite": "Lucarionite", "manectite": "Manectite", "mawilite": "Mawilite", "medichamite": "Medichamite", "mewtwonite-y": "Mewtwonite Y", "red-orb": "Red Orb", "sablenite": "Sablenite", "sceptilite": "Sceptilite", "scraftinite": "Scraftinite", "sharpedonite": "Sharpedonite", "skarmorite": "Skarmorite", "slowbronite": "Slowbronite", "steelixite": "Steelixite", "tyranitarite": "Tyranitarite", "zeraorite": "Zeraorite", "zygardite": "Zygardite"}
+const STONE_ID0 := 9000
+func stones_init() -> void:
+	var ks: Array = STONE_NAME.keys(); ks.sort()
+	for i in ks.size():
+		if not C.DB.dex.held.has(STONE_ID0 + i): C.DB.dex.held[STONE_ID0 + i] = {"k": ks[i], "n": STONE_NAME[ks[i]]}
+func stone_id(k: String) -> int:
+	var ks: Array = STONE_NAME.keys(); ks.sort(); var i := ks.find(k)
+	return STONE_ID0 + i if i >= 0 else 0
+func is_stone(id) -> bool: return int(id) >= STONE_ID0 and int(id) < STONE_ID0 + STONE_NAME.size()
+func stone_for(mega_id: int) -> String: return MEGAD.STONE.get(mega_id, "")
+func megas_ready(e: Dictionary) -> Array:   # the Megas this Pokémon can turn into right now (holding the right stone)
+	var out := []
+	for mid in C.megas_of(e.id):
+		var st := stone_for(mid)
+		if st == "key-stone" or (st != "" and C.held_key(e) == st): out.append(mid)
+	return out
+func item_icon(id) -> Control:   # the kit's item icon, or a Mega Stone's bag sprite
+	if not is_stone(id): return K.item_icon(id)
+	var k: String = C.DB.dex.held[int(id)].k
+	if not _mega_tex.has(k):
+		var im := Image.new(); im.load_png_from_buffer(Marshalls.base64_to_raw(MEGAD.PNG[k])); _mega_tex[k] = ImageTexture.create_from_image(im)
+	var r := TextureRect.new(); r.texture = _mega_tex[k]; r.custom_minimum_size = Vector2(24, 24); r.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	r.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED; r.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST; r.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return r
+func stone_drop(th: float) -> int:   # after a won battle: the boss's own line's stone (25%), or at tier 10+ a random one (3%)
+	var B: Dictionary = BT.B; var boss := 0
+	for x in B.waves[-1]: if x.get("boss", 0): boss = int(x.id)
+	var line := [boss]; var i := 0
+	while i < line.size():
+		for v in C.SP.get(line[i], {}).get("ev", []): if C.SP.has(v.to) and not line.has(int(v.to)): line.append(int(v.to))
+		i += 1
+	var own := []
+	for id in line:
+		for mid in C.megas_of(id):
+			var st := stone_for(mid)
+			if st != "" and st != "key-stone" and not own.has(st): own.append(st)
+	var k := ""
+	if own.size() and randf() < 0.25: k = own[randi() % own.size()]
+	elif th >= 10 and randf() < 0.03:
+		var all: Array = STONE_NAME.keys(); k = all[randi() % all.size()]
+	if k == "": return 0
+	var id := stone_id(k); G.held[id] = G.held.get(id, 0) + 1; return id
 func _mega_badge(parent: Control, e: Dictionary) -> void:
 	var mg: Array = C.megas_of(e.id)
 	if mg.is_empty() or not MEGAD.STONE.has(mg[0]): return
@@ -1210,7 +1257,7 @@ func _mega_badge(parent: Control, e: Dictionary) -> void:
 	var r := TextureRect.new(); r.texture = _mega_tex[st]; r.expand_mode = TextureRect.EXPAND_IGNORE_SIZE; r.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	r.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST; r.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	r.anchor_left = 1; r.anchor_right = 1; r.offset_left = -28; r.offset_right = -2; r.offset_top = 20; r.offset_bottom = 46
-	r.tooltip_text = C.SP[mg[0]].n; parent.add_child(r)
+	r.tooltip_text = "%s: needs %s" % [C.SP[mg[0]].n, STONE_NAME.get(st, "no stone")]; parent.add_child(r)
 # small corner badges on a card: gold star for a shiny, red alpha for an Alpha
 func _badges(parent: Control, e: Dictionary) -> void:
 	var tx := ("★" if e.get("shiny", false) else "") + ("α" if e.get("alpha", false) else "")

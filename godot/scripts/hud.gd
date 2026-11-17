@@ -370,9 +370,11 @@ func tower_info() -> void:
 	# Empowerment Seed: once per battle (a Mega / Primal where SpriteCollab animates one, otherwise Awakening)
 	if not B.get("empowered", false):
 		var emp := K.flow(4); tinfo_v.add_child(emp)
-		var mg: Array = C.megas_of(t.e.id)
+		var mg: Array = ui.megas_ready(t.e)   # Mega Evolution needs its own Mega Stone held (Rayquaza: none)
 		for mid in mg: emp.add_child(K.btn("Empower: %s" % C.SP[mid].n, func(): BT.empower(t, mid); tower_info(), false, true))
 		if mg.is_empty(): emp.add_child(K.btn("Empower (Awaken)", func(): BT.empower(t); tower_info(), false, true))
+		var cm: Array = C.megas_of(t.e.id)
+		if mg.is_empty() and cm.size(): tinfo_v.add_child(K.lbl("Holding %s would let it Mega Evolve instead" % ui.STONE_NAME.get(ui.stone_for(cm[0]), "its Mega Stone"), 12, K.DIM))
 	elif t.get("awk", false): tinfo_v.add_child(K.lbl("Awakened: 30% more damage and attack speed", 12, Color("#ffd84a")))
 	elif t.e.has("mega_from") and C.SP[t.e.id].get("form", "") == "mega": tinfo_v.add_child(K.lbl("Empowered for this battle", 12, Color("#ffd84a")))
 	var modes := K.flow(4); tinfo_v.add_child(modes)
@@ -506,6 +508,8 @@ func show_result() -> void:
 	if B.drop: rw.add_child(_item_chip(B.drop, C.DB.dex.items[B.drop]))
 	if B.hdrop: rw.add_child(_item_chip(B.hdrop, C.DB.dex.held[B.hdrop].n))
 	if B.phase == "win" and not B.has("tmdrop"): B.tmdrop = ui.tm_drop(B.th, B.team); C.save()
+	if B.phase == "win" and not B.has("mdrop"): B.mdrop = ui.stone_drop(B.th); C.save()
+	if B.get("mdrop", 0): rw.add_child(_item_chip(B.mdrop, C.DB.dex.held[B.mdrop].n))
 	if B.get("tmdrop", 0):
 		var tc: PanelContainer = ui._chip("", "", "TM %s" % C.mv(B.tmdrop).n); tc.get_child(0).add_child(ui.tm_icon(B.tmdrop)); tc.get_child(0).move_child(tc.get_child(0).get_child(-1), 0); rw.add_child(tc)
 	if B.recruits.size():
@@ -521,7 +525,7 @@ func show_result() -> void:
 	if meter: meter.visible = false
 	if grip: grip.visible = false
 func _item_chip(id, name: String) -> PanelContainer:
-	var c: PanelContainer = ui._chip("", "", name); c.get_child(0).add_child(K.item_icon(id)); c.get_child(0).move_child(c.get_child(0).get_child(-1), 0); return c
+	var c: PanelContainer = ui._chip("", "", name); c.get_child(0).add_child(ui.item_icon(id)); c.get_child(0).move_child(c.get_child(0).get_child(-1), 0); return c
 func _count_up(chip: PanelContainer, to: int) -> void:
 	var l: Label = chip.get_child(0).get_child(-1); var tw := chip.create_tween()
 	tw.tween_method(func(k: float): l.text = ui._num(round(to * (1 - pow(1 - k, 3)))), 0.0, 1.0, 0.9)
