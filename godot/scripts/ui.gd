@@ -328,7 +328,7 @@ func route_panel(i: int) -> void:
 		var row := K.hbox(6); row.alignment = BoxContainer.ALIGNMENT_CENTER; box.add_child(row)
 		row.add_child(K.btn("◀", func():
 			if r.tier > 1: r.tier -= 1; self_ref.call(self_ref), true, true))
-		row.add_child(K.lbl("Tier %d  %s%s  -  wild Lv %d-%d  -  %d waves" % [r.tier, "★".repeat(stn), "☆".repeat(3 - stn), min(98, lr[0]), min(100, lr[1]), BT.wave_count(r.tier)], 15, Color.WHITE, false))
+		row.add_child(K.lbl("Tier %d  %s%s  -  wild Lv %d-%d  -  %d waves" % [r.tier, "★".repeat(stn), "☆".repeat(3 - stn), min(98, lr[0]), min(100, lr[1]), waves_n(r.tier)], 15, Color.WHITE, false))
 		row.add_child(K.btn("▶", func():
 			if r.tier < C.map_tier(i): r.tier += 1; self_ref.call(self_ref), true, true))
 		# Day / Night (shares the map's tiers and stars); the last choice is remembered
@@ -1076,7 +1076,7 @@ func _glide(dt: float) -> void:
 	if _gl_sc.vertical_scroll_mode != ScrollContainer.SCROLL_MODE_DISABLED: _gl_sc.scroll_vertical = int(_gl_sc.scroll_vertical + _gl_v.y * dt)
 	if _gl_sc.horizontal_scroll_mode != ScrollContainer.SCROLL_MODE_DISABLED: _gl_sc.scroll_horizontal = int(_gl_sc.scroll_horizontal + _gl_v.x * dt)
 	_gl_v *= pow(0.03, dt)
-func _process(dt: float) -> void: _glide(dt); _prune_panel_fits(); _panel_x()
+func _process(dt: float) -> void: _glide(dt); _prune_panel_fits(); _panel_x(); short_shim_tick()
 # a popup's X button was pinned to the screen's corner, so on tall popups it floated above the window (the user's report);
 # kit.gd can't be patched, so here it's moved into the window's own top-right corner every frame (the window resizes)
 func _panel_x() -> void:
@@ -1107,6 +1107,52 @@ func _prune_panel_fits() -> void:
 func heavy_pool(SI: Dictionary) -> Array:
 	var bulk: Array = BT.stable_sort(SI.pool, func(m): return -(m.b[0] + m.b[2]))
 	return bulk.slice(0, max(6, ceili(SI.pool.size() / 3.0)))
+# ---- shorter maps (the user's choice): 20 waves at tier 1 up to 40 at tier 20. App builds from before this have 40+
+# waves baked into battle.gd, so there the battle's waves are thinned to the new count (keeping how each wave grows over
+# the map and the boss at the end), and per-wave XP and cash are doubled so a battle still pays the same in total.
+func waves_n(tier: int) -> int: return 20 + int(round((tier - 1) * 20 / 19.0))
+func old_build_waves() -> bool: return BT.wave_count(1) == 40
+func shorten_waves(tier: int) -> void:
+	var B: Dictionary = BT.B; var W0: int = B.waves.size(); var W := waves_n(tier)
+	if not old_build_waves() or W0 <= W: return
+	var nw := []
+	for k in range(1, W + 1):
+		if k == W: nw.append(B.waves[W0 - 1]); continue
+		var j: int = clampi(int(round(k * W0 / float(W))), 1, W0 - 1)
+		if j % 5 == 0: j -= 1   # an old heavy wave: take the normal one before it (this map's heavy waves are rebuilt after)
+		nw.append(B.waves[j - 1])
+	var rv := []
+	for wl in B.waves: for x in wl: if x.has("rival"): rv.append(x)
+	var has_rv := false
+	for wl in nw: for x in wl: if x.has("rival"): has_rv = true
+	if rv.size() and not has_rv:   # the rival team's wave got thinned out: it races in a nearby wave instead
+		var k: int = clampi(int(W / 2.0), 2, W - 2)
+		if k % 5 == 0: k += 1
+		var wl: Array = nw[k - 1].duplicate(); for x in rv: wl.insert(wl.size() / 2, x)
+		nw[k - 1] = wl
+	var m: float = W0 / float(W)   # how much the map shrank: rewards per wave grow by the same (x2 at tier 1 ... x1.475 at tier 20)
+	B.waves = nw; B.short_shim = m
+	C.MODS = null; C.mods()   # fresh from the tree, never stacked on a previous battle's
+	C.MODS.koCash = m * (1.0 + C.MODS.get("koCash", 0.0)) - 1.0
+	# wave bonus (30 + 6 x wave): the same total as the old map's, paid over the new waves
+	var old_tot := 0.0; var new_tot := 0.0
+	for w in range(1, W0 + 1): old_tot += 30 + 6 * w
+	for w in range(1, W + 1): new_tot += 30 + 6 * w
+	C.MODS.waveBonus = old_tot / new_tot * (1.0 + C.MODS.get("waveBonus", 0.0)) - 1.0
+var _xp_seen := {}
+func short_shim_tick() -> void:   # old builds: every XP a Pokémon earns in battle is given once more; rewards go back after
+	var B = BT.B
+	if B == null or not B.get("short_shim", 0.0): return
+	if B.over or screen != "battle":   # finished or left: the tree's own numbers come back
+		if not B.get("shim_done", false): B.shim_done = true; C.MODS = null; _xp_seen = {}
+		return
+	var m: float = B.short_shim
+	for t in B.towers:
+		var u = t.e.u; var cur: float = B.xpLog.get(u, 0); var d: float = cur - _xp_seen.get(u, 0.0)
+		if d > 0:
+			var ex := int(round(d * (m - 1.0)))
+			var ev: Array = C.give_xp(t.e, ex) if ex > 0 else []; B.xpLog[u] = cur + ex; _xp_seen[u] = cur + ex
+			if ev.size(): BT.floater(t, "Lv %d" % t.e.lv, 3); Snd.sfx("lvl")
 func rework_heavy(set_idx: int, tier0: int, seed: int) -> void:
 	var B: Dictionary = BT.B; var W: int = B.waves.size()
 	var SI: Dictionary = BT.spawn_info(set_idx, tier0); var tier: float = SI.tier; var H := heavy_pool(SI)
@@ -1118,7 +1164,8 @@ func rework_heavy(set_idx: int, tier0: int, seed: int) -> void:
 		var f := w / float(W); var lv := int(floor(base + (top - base) * pow(f, 1.3) + 0.5)); var k := w / 5 - 1
 		var st: int = max(0, int(floor(k * (byB.size() - 3) / float(K - 1) + 0.5))) if K > 1 else 0
 		var picks: Array = byB.slice(st, st + 3)   # a window of 3 that walks from the weakest to the strongest
-		var n := int(floor((3 + tier * 0.4 + w * 0.3) * G4[4] + 0.5))
+		var ow: float = w * (40.0 + tier0 - 1) / W   # the old 40+ wave numbering at this point of the map
+		var n := int(floor((3 + tier * 0.4 + ow * 0.3) * G4[4] + 0.5))
 		var list := []
 		for i in n: list.append({"id": picks[int(floor(R.next() * picks.size()))].id, "lv": min(100, lv + 2), "gap": 1.6})
 		if w % 10 == 0:   # midboss wave: one of the map's strongest species (not the final boss) walks in the middle of the group

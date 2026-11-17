@@ -14,7 +14,7 @@ static func STAGE(s: float) -> float: return (2 + s) / 2.0 if s >= 0 else 2 / (2
 const OHKO := [12, 32, 90, 329]
 const FIXED := {69: "lv", 101: "lv", 82: 40, 49: 20, 162: "half"}
 const MAXTIER := 20
-const XPMUL := 0.4   # slower leveling: about Lv50 by tier 10
+const XPMUL := 0.4   # slower leveling: about Lv50 by tier 10 (times wave_mul(): the shorter maps give more per wave)
 var TZ := 24
 var _eid := 0; var _tid := 0
 
@@ -72,7 +72,11 @@ const RARW := [1.0, 0.6, 0.35, 0.15]
 func rar_of(m: Dictionary) -> int: return 0 if m.cr >= 190 else (1 if m.cr >= 120 else (2 if m.cr >= 46 else 3))
 func rar_weight(m: Dictionary) -> float:   # the Rescue tree's rare-find nodes help Rare and Very rare ones
 	var k := rar_of(m); return RARW[k] * (1 + mod("rare") if k >= 2 else 1.0)
-func wave_count(tier: int) -> int: return 40 + (tier - 1)   # 40 waves at tier 1 on every map, +1 per tier (59 at tier 20)
+func wave_count(tier: int) -> int: return 20 + int(round((tier - 1) * 20 / 19.0))   # 20 waves at tier 1 up to 40 at tier 20 (the user's choice; was 40-59)
+# the old wave numbering (40 at tier 1, +1 per tier): wave sizes and gaps follow where a wave sits in the map, so a short
+# map's waves are as big as the old long map's at the same point; per-wave rewards are doubled to keep each battle's total
+func old_wave(w: int, tier: int) -> float: return w * (40.0 + tier - 1) / wave_count(tier)
+func wave_mul() -> float: return (40.0 + B.tier - 1) / wave_count(B.tier)   # rewards per wave: x2 at tier 1 ... x1.475 at tier 20
 # which wild Pokémon a map and tier can send: the wave builder draws from these, and the route panel lists them
 func spawn_info(set_idx: int, tier0: int) -> Dictionary:
 	var tier: float = C.threat_tier(set_idx, tier0); var S: Dictionary = C.DB.ts[set_idx]
@@ -132,14 +136,15 @@ func waves_for(set_idx: int, tier0: int, R, night := false) -> Array:
 			for i in n: list.append({"id": pickW.call(target).id, "lv": lv, "gap": 0.6})
 			list.append({"id": boss.id, "lv": min(100, top + (8 if legend_boss.size() else 3)), "gap": 2.5, "boss": 1})
 		elif w % 5 == 0:   # heavy wave: few strong ones
-			var n := int(round((3 + tier * 0.4 + w * 0.15) * G4[4]))
+			var n := int(round((3 + tier * 0.4 + old_wave(w, tier0) * 0.15) * G4[4]))
 			var heavy: Array = SI.heavy
 			for i in n: list.append({"id": heavy[int(floor(R.next() * heavy.size()))].id, "lv": min(100, lv + 2), "gap": 1.6})
 		else:
-			var n := int(round((4 + w * (0.6 if tier == 1 else 0.85) + tier * 0.5) * G4[4]))
+			var ow := old_wave(w, tier0)
+			var n := int(round((4 + ow * (0.6 if tier == 1 else 0.85) + tier * 0.5) * G4[4]))
 			var kinds := [pickW.call(target), pickW.call(target), pickW.call(target)]
 			kinds = kinds.slice(0, 1 + int(floor(R.next() * 3)))
-			var gap := clampf(1.05 - w * 0.025, 0.4, 1.05) / sqrt(G4[4])
+			var gap := clampf(1.05 - ow * 0.025, 0.4, 1.05) / sqrt(G4[4])
 			for i in n: list.append({"id": kinds[i % kinds.size()].id, "lv": max(1, lv - (1 if R.next() < 0.3 else 0)), "gap": gap})
 		waves.append(list)
 	# rival rescue teams (the PMD games' own rivals): on some maps one races through a wave, faster and tougher than the
@@ -663,14 +668,14 @@ func ko(t, e: Dictionary) -> void:
 		B.rival.got += 1; B.rival.left -= 1
 		if B.rival.left <= 0 and B.rival.got >= 3 and not B.rival.get("paid", false):
 			B.rival.paid = true; var pay := int(100 + B.th * 40); B.cash += pay; floater(e, "%s beaten! +$%d" % [e.rival, pay], 4)
-	B.cash += int(round((2 + floor(e.lv / 6.0) + (50 if e.boss else 0) + (25 if e.get("alpha", false) else 0)) * (2 if (t != null and C.held_key(t.e) == "amulet-coin") else 1) * (1 + mod("koCash"))))
+	B.cash += int(round((2 + floor(e.lv / 6.0) + (50 if e.boss else 0) + (25 if e.get("alpha", false) else 0)) * wave_mul() * (2 if (t != null and C.held_key(t.e) == "amulet-coin") else 1) * (1 + mod("koCash"))))   # shorter maps pay more per KO
 	if t != null:
 		var sp := SP(e.id)
 		for o in B.towers:
 			var L: int = e.lv; var Lp: int = o.e.lv
 			var gain: float = floor(sp.x * L / 5.0 * pow((2 * L + 10) / float(L + Lp + 10), 2.5) / 4.0) + 1
 			# full XP up to 5 levels above the wild one, none at 15+ above
-			var g := int(ceil(gain * (1.0 if is_same(o, t) else 0.33) * (3.0 if e.boss else 1.0) * (1.5 if C.held_key(o.e) == "lucky-egg" else 1.0) * XPMUL * clampf(1 - (o.e.lv - e.lv - 5) / 10.0, 0, 1)))
+			var g := int(ceil(gain * (1.0 if is_same(o, t) else 0.33) * (3.0 if e.boss else 1.0) * (1.5 if C.held_key(o.e) == "lucky-egg" else 1.0) * XPMUL * wave_mul() * clampf(1 - (o.e.lv - e.lv - 5) / 10.0, 0, 1)))
 			var ev: Array = C.give_xp(o.e, g); B.xpLog[o.e.u] = B.xpLog.get(o.e.u, 0) + g
 			if ev.size(): floater(o, "Lv %d" % o.e.lv, 3); sfx("lvl")
 		t.kills += 1
@@ -725,7 +730,7 @@ func tick(dt: float) -> void:
 			var alive := false
 			for e in B.en: if e.hp > 0: alive = true; break
 			if not alive:
-				B.cash += int(round((30 + B.wave * 6) * (1 + mod("waveBonus"))))
+				B.cash += int(round((30 + old_wave(B.wave, B.tier) * 6) * wave_mul() * (1 + mod("waveBonus"))))   # the same wave-bonus total as the old 40+ wave maps
 				if B.pwx and B.wave >= B.pwx.until: B.pwx = null   # your weather ends with its last wave
 				if B.wave >= B.waves.size(): finish(true); return
 				B.phase = "build"
