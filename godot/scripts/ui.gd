@@ -1076,7 +1076,19 @@ func _glide(dt: float) -> void:
 	if _gl_sc.vertical_scroll_mode != ScrollContainer.SCROLL_MODE_DISABLED: _gl_sc.scroll_vertical = int(_gl_sc.scroll_vertical + _gl_v.y * dt)
 	if _gl_sc.horizontal_scroll_mode != ScrollContainer.SCROLL_MODE_DISABLED: _gl_sc.scroll_horizontal = int(_gl_sc.scroll_horizontal + _gl_v.x * dt)
 	_gl_v *= pow(0.03, dt)
-func _process(dt: float) -> void: _glide(dt); _prune_panel_fits()
+func _process(dt: float) -> void: _glide(dt); _prune_panel_fits(); _panel_x()
+# a popup's X button was pinned to the screen's corner, so on tall popups it floated above the window (the user's report);
+# kit.gd can't be patched, so here it's moved into the window's own top-right corner every frame (the window resizes)
+func _panel_x() -> void:
+	var m = K.modal
+	if not is_instance_valid(m) or m.get_child_count() < 3: return
+	var x = m.get_child(m.get_child_count() - 1)
+	if not (x is Button and x.text == "X"): return
+	var pc = m.get_child(1).get_child(0).get_child(0) if m.get_child(1).get_child_count() and m.get_child(1).get_child(0).get_child_count() else null
+	if not (pc is Control): return
+	var r: Rect2 = pc.get_global_rect()
+	if r.size.x < 10: return
+	x.global_position = Vector2(r.end.x - x.size.x - 8, r.position.y + (8.0 if r.size.y >= x.size.y + 16 else (r.size.y - x.size.y) / 2))
 # every popup (K.panel) hooks a size handler onto the menu layer and never removes it; once the popup is gone that handler
 # points at freed nodes, and a resize (changing the UI size, resizing the window on PC) ran all of them: errors, or a crash.
 # kit.gd can't be patched, so the dead ones are dropped here: only the open popup's own handler is kept.
