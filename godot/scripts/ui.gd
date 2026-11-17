@@ -408,7 +408,7 @@ func mon_card(e: Dictionary, on = null, picked := false) -> PanelContainer:
 	var c := K.card(104, on, picked); var cb := K.card_box(c)
 	var top := Control.new(); top.custom_minimum_size = Vector2(0, 48); top.mouse_filter = Control.MOUSE_FILTER_IGNORE; cb.add_child(top)
 	var ic := K.icon(e.id); ic.set_anchors_preset(Control.PRESET_CENTER_TOP); ic.anchor_left = 0.5; ic.anchor_right = 0.5; ic.offset_left = -24; ic.offset_right = 24; ic.offset_bottom = 48; top.add_child(ic)
-	_badges(top, e)
+	_badges(top, e); _mega_badge(top, e)
 	var lst := K.sb(K.WIND, Color(1, 1, 1, 0.27), 1, 8, 1); lst.content_margin_left = 5; lst.content_margin_right = 5
 	var lv := PanelContainer.new(); lv.add_theme_stylebox_override("panel", lst); lv.add_child(K.lbl("Lv %d" % e.lv, 11, Color.WHITE, false))
 	# sized by its text, growing leftward from the card's top-right corner (a fixed width let the text spill out)
@@ -1197,6 +1197,20 @@ func evolve_heavies(R) -> void:
 			plain[x.id] = 1
 	B.evo_only = {}
 	for k in evo: if not plain.has(k): B.evo_only[k] = 1   # species met only as evolved heavies / bosses: their join asks are halved here
+# mega icon on a card (the user's choice): a Pokémon that can Mega Evolve (an animated Mega / Primal form) shows that
+# form's own item under its level: its Mega Stone, Blue / Red Orb, or the Key Stone for Rayquaza
+const MEGAD := preload("res://scripts/megadata.gd")
+var _mega_tex := {}
+func _mega_badge(parent: Control, e: Dictionary) -> void:
+	var mg: Array = C.megas_of(e.id)
+	if mg.is_empty() or not MEGAD.STONE.has(mg[0]): return
+	var st: String = MEGAD.STONE[mg[0]]
+	if not _mega_tex.has(st):
+		var im := Image.new(); im.load_png_from_buffer(Marshalls.base64_to_raw(MEGAD.PNG[st])); _mega_tex[st] = ImageTexture.create_from_image(im)
+	var r := TextureRect.new(); r.texture = _mega_tex[st]; r.expand_mode = TextureRect.EXPAND_IGNORE_SIZE; r.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	r.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST; r.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	r.anchor_left = 1; r.anchor_right = 1; r.offset_left = -28; r.offset_right = -2; r.offset_top = 20; r.offset_bottom = 46
+	r.tooltip_text = C.SP[mg[0]].n; parent.add_child(r)
 # small corner badges on a card: gold star for a shiny, red alpha for an Alpha
 func _badges(parent: Control, e: Dictionary) -> void:
 	var tx := ("★" if e.get("shiny", false) else "") + ("α" if e.get("alpha", false) else "")
